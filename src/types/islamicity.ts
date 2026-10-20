@@ -132,3 +132,24 @@ export interface VoucherItem {
   quotaRemaining: number;
   terms: string[];
 }
+
+export interface QuranDayChecklist {
+  dayId: string;
+  dayName: string;
+  dateStr?: string;
+  ziyadahTarget: string;
+  ziyadahDone: boolean;
+  murajaahTarget: string;
+  murajaahDone: boolean;
+  tasmiDone: boolean;
+  tilawahDone: boolean;
+  notes?: string;
+}
+
+export interface QuranMutabaahProfile {
+  targetSurah: string;
+  targetJuz: string;
+  weeklyTargetVerses: number;
+  musyrifName: string;
+  halaqahGroup: string;
+}

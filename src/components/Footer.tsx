@@ -95,6 +95,11 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
                 </button>
               </li>
               <li>
+                <button onClick={() => onSelectTab('komunitas')} className="hover:text-emerald-400 transition-colors">
+                  Mutaba'ah Hafalan Al-Qur'an & Forum Umat
+                </button>
+              </li>
+              <li>
                 <button onClick={() => onSelectTab('simpul-umat')} className="hover:text-emerald-400 transition-colors">
                   700+ Direktori Simpul Pejuang Umat
                 </button>

@@ -179,7 +179,7 @@ export const Header: React.FC<HeaderProps> = ({
                   : 'hover:text-white'
               }`}
             >
-              Forum Umat
+              Komunitas & Mutaba'ah
             </button>
             <button
               onClick={() => onSelectTab('simpul-umat')}
@@ -302,7 +302,7 @@ export const Header: React.FC<HeaderProps> = ({
               activeTab === 'komunitas' ? 'bg-emerald-900/40 text-emerald-400' : 'text-slate-300 hover:bg-slate-800'
             }`}
           >
-            <Users className="w-4 h-4" /> Diskusi & Forum Umat
+            <BookOpen className="w-4 h-4" /> Komunitas & Mutaba'ah Al-Qur'an
           </button>
           <button
             onClick={() => { onSelectTab('simpul-umat'); setMobileMenuOpen(false); }}

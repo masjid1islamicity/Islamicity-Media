@@ -1,4 +1,5 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
+import jsPDF from 'jspdf';
 import { 
   Calculator, 
   Coins, 
@@ -17,7 +18,8 @@ import {
   Calendar,
   Layers,
   X,
-  ExternalLink
+  ExternalLink,
+  Search
 } from 'lucide-react';
 
 interface ZakatCalculatorSectionProps {
@@ -35,6 +37,44 @@ export interface ZakatLedgerItem {
   channel: string;
   referenceNo: string;
 }
+
+const STORAGE_KEY = 'islamicity_zakat_calculation_history';
+
+const DEFAULT_LEDGER_ITEMS: ZakatLedgerItem[] = [
+  {
+    id: 'ZK-2026-10492',
+    date: '15 Oktober 2026',
+    type: 'Zakat Penghasilan (Bulan Berjalan)',
+    netBaseAmount: 10500000,
+    nisabValue: 10270833,
+    zakatDue: 262500,
+    status: 'Lunas & Disalurkan',
+    channel: 'UPIC Limo & ARTVISI',
+    referenceNo: 'ISLM-ZIS-94819'
+  },
+  {
+    id: 'ZK-2026-09214',
+    date: '28 September 2026',
+    type: 'Zakat Maal (Tabungan 1 Tahun)',
+    netBaseAmount: 155000000,
+    nisabValue: 123250000,
+    zakatDue: 3875000,
+    status: 'Lunas & Disalurkan',
+    channel: 'Baitul Maal Islamicity',
+    referenceNo: 'ISLM-ZIS-88210'
+  },
+  {
+    id: 'ZK-2026-08119',
+    date: '10 Agustus 2026',
+    type: 'Zakat Emas Simpanan (95 Gram)',
+    netBaseAmount: 137750000,
+    nisabValue: 123250000,
+    zakatDue: 3443750,
+    status: 'Lunas & Disalurkan',
+    channel: 'Mitra Baznas & ARTVISI',
+    referenceNo: 'ISLM-ZIS-77412'
+  }
+];
 
 export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
   onPayZakat
@@ -66,42 +106,30 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
   const [isPdfModalOpen, setIsPdfModalOpen] = useState<boolean>(false);
   const [reportNotification, setReportNotification] = useState<string | null>(null);
 
-  // Initial Zakat Ledger Records
-  const [ledgerItems, setLedgerItems] = useState<ZakatLedgerItem[]>([
-    {
-      id: 'ZK-2026-10492',
-      date: '15 Oktober 2026',
-      type: 'Zakat Penghasilan (Bulan Berjalan)',
-      netBaseAmount: 10500000,
-      nisabValue: 10270833,
-      zakatDue: 262500,
-      status: 'Lunas & Disalurkan',
-      channel: 'UPIC Limo & ARTVISI',
-      referenceNo: 'ISLM-ZIS-94819'
-    },
-    {
-      id: 'ZK-2026-09214',
-      date: '28 September 2026',
-      type: 'Zakat Maal (Tabungan 1 Tahun)',
-      netBaseAmount: 155000000,
-      nisabValue: 123250000,
-      zakatDue: 3875000,
-      status: 'Lunas & Disalurkan',
-      channel: 'Baitul Maal Islamicity',
-      referenceNo: 'ISLM-ZIS-88210'
-    },
-    {
-      id: 'ZK-2026-08119',
-      date: '10 Agustus 2026',
-      type: 'Zakat Emas Simpanan (95 Gram)',
-      netBaseAmount: 137750000,
-      nisabValue: 123250000,
-      zakatDue: 3443750,
-      status: 'Lunas & Disalurkan',
-      channel: 'Mitra Baznas & ARTVISI',
-      referenceNo: 'ISLM-ZIS-77412'
+  // Zakat Calculation History Ledger (persisted in state & localStorage)
+  const [ledgerItems, setLedgerItems] = useState<ZakatLedgerItem[]>(() => {
+    try {
+      const saved = localStorage.getItem(STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed) && parsed.length > 0) {
+          return parsed;
+        }
+      }
+    } catch (e) {
+      console.warn('Error reading zakat ledger from localStorage:', e);
     }
-  ]);
+    return DEFAULT_LEDGER_ITEMS;
+  });
+
+  // Sync to localStorage whenever calculation history updates
+  useEffect(() => {
+    try {
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(ledgerItems));
+    } catch (e) {
+      console.warn('Error saving zakat ledger to localStorage:', e);
+    }
+  }, [ledgerItems]);
 
   // Computations
   let totalNetAssets = 0;
@@ -161,50 +189,340 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
     setLedgerItems(prev => prev.filter(item => item.id !== id));
   };
 
-  // Download CSV feature
-  const handleDownloadCsv = () => {
-    const headers = [
-      'ID Transaksi',
-      'Tanggal Transaksi',
-      'Jenis Zakat',
-      'Dasar Perhitungan (Rp)',
-      'Nilai Nisab Acuan (Rp)',
-      'Total Zakat (2.5%) (Rp)',
-      'Status Pengelolaan',
-      'Kanal Penyaluran',
-      'Nomor Referensi'
-    ];
+  const [ledgerSearchTerm, setLedgerSearchTerm] = useState<string>('');
 
-    const rows = ledgerItems.map(item => [
-      item.id,
-      `"${item.date}"`,
-      `"${item.type}"`,
-      item.netBaseAmount,
-      item.nisabValue,
-      item.zakatDue,
-      `"${item.status}"`,
-      `"${item.channel}"`,
-      `"${item.referenceNo}"`
-    ]);
+  // Download PDF document feature
+  const handleDownloadPdf = () => {
+    try {
+      const doc = new jsPDF({
+        orientation: 'portrait',
+        unit: 'mm',
+        format: 'a4',
+      });
 
-    const csvContent = '\uFEFF' + [
-      '# RINGKASAN PENGELOLAAN ZAKAT TRANSPARAN - ISLAMICITY MEDIA & BAITUL MAAL',
-      `# Tanggal Unduh: ${new Date().toLocaleString('id-ID')}`,
-      `# Harga Emas Acuan: Rp ${goldPricePerGram.toLocaleString('id-ID')} / gram`,
-      headers.join(','),
-      ...rows.map(r => r.join(','))
-    ].join('\n');
+      const pageWidth = doc.internal.pageSize.getWidth(); // 210mm
+      const pageHeight = doc.internal.pageSize.getHeight(); // 297mm
 
-    const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
-    const url = URL.createObjectURL(blob);
-    const link = document.createElement('a');
-    link.setAttribute('href', url);
-    link.setAttribute('download', `ringkasan_zakat_transparan_islamicity_${new Date().toISOString().slice(0, 10)}.csv`);
-    document.body.appendChild(link);
-    link.click();
-    document.body.removeChild(link);
-    URL.revokeObjectURL(url);
+      // Top Header Banner
+      doc.setFillColor(6, 78, 59); // Emerald 900
+      doc.rect(0, 0, pageWidth, 32, 'F');
+
+      // Golden decorative accent bar
+      doc.setFillColor(217, 119, 6); // Amber 600
+      doc.rect(0, 32, pageWidth, 2.5, 'F');
+
+      // Title & Organization
+      doc.setTextColor(255, 255, 255);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(14);
+      doc.text('BAITUL MAAL ISLAMICITY MEDIA', 14, 12);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8.5);
+      doc.setTextColor(209, 250, 229);
+      doc.text('Unit Pelayanan Islamicity (UPIC) Limo & Jejaring ARTVISI Indonesia', 14, 18);
+      doc.text('Portal Resmi: global.media.islamicity.tv  ·  qris.masjid.islamicity.tv  ·  BSI 7888819198', 14, 24);
+
+      // Metadata right aligned
+      doc.setFontSize(8);
+      doc.setTextColor(254, 243, 199);
+      const docRef = `ISLM/ZIS-DOC/${new Date().getFullYear()}/${Date.now().toString().slice(-6)}`;
+      doc.text(`NO DOKUMEN: ${docRef}`, pageWidth - 14, 14, { align: 'right' });
+      doc.text(`TANGGAL: ${new Date().toLocaleDateString('id-ID', { day: 'numeric', month: 'long', year: 'numeric' })}`, pageWidth - 14, 19, { align: 'right' });
+      doc.text('STATUS: RESMI & TERVERIFIKASI', pageWidth - 14, 24, { align: 'right' });
+
+      // Document Heading
+      doc.setTextColor(6, 78, 59);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(12.5);
+      doc.text('BUKTI PERHITUNGAN ZAKAT & RIWAYAT TRANSAKSI DONASI', 14, 43);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(71, 85, 105);
+      doc.text(
+        'Laporan resmi transparansi pengelolaan ZISWAF sesuai syariat Islam (QS. At-Taubah: 60) dan regulasi zakat.',
+        14,
+        48
+      );
+
+      // SECTION 1: RINGKASAN PERHITUNGAN ZAKAT AKTIF
+      let yPos = 54;
+      doc.setFillColor(241, 245, 249);
+      doc.setDrawColor(203, 213, 225);
+      doc.roundedRect(14, yPos, pageWidth - 28, 38, 2, 2, 'FD');
+
+      doc.setFillColor(16, 185, 129);
+      doc.rect(14, yPos, 3, 38, 'F'); // Left accent
+
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(6, 78, 59);
+      doc.text('1. RINGKASAN PERHITUNGAN ZAKAT TERKINI', 20, yPos + 6.5);
+
+      const activeTypeLabel = `Zakat ${activeType.charAt(0).toUpperCase() + activeType.slice(1)}`;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(8);
+      doc.setTextColor(51, 65, 85);
+
+      // Col 1
+      doc.text(`Jenis Zakat:`, 20, yPos + 14);
+      doc.setFont('helvetica', 'bold');
+      doc.text(activeTypeLabel, 60, yPos + 14);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Dasar Harta Bersih:`, 20, yPos + 21);
+      doc.setFont('helvetica', 'bold');
+      doc.text(formatCurrency(totalNetAssets), 60, yPos + 21);
+
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Nisab Acuan:`, 20, yPos + 28);
+      doc.setFont('helvetica', 'bold');
+      const nisabVal = activeType === 'penghasilan' ? Math.round(monthlyNisabRupiah) : annualNisabRupiah;
+      doc.text(`${formatCurrency(nisabVal)} (Emas Rp ${goldPricePerGram.toLocaleString('id-ID')}/g)`, 60, yPos + 28);
+
+      // Col 2
+      doc.setFont('helvetica', 'normal');
+      doc.text(`Status Fiqih:`, 118, yPos + 14);
+      doc.setFont('helvetica', 'bold');
+      if (isObligated) {
+        doc.setTextColor(5, 150, 105);
+        doc.text('WAJIB ZAKAT (2,5%)', 152, yPos + 14);
+      } else {
+        doc.setTextColor(180, 83, 9);
+        doc.text('BELUM NISAB (SUNNAH INFAQ)', 152, yPos + 14);
+      }
+
+      doc.setFont('helvetica', 'normal');
+      doc.setTextColor(51, 65, 85);
+      doc.text(`Kewajiban Zakat (2.5%):`, 118, yPos + 21);
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(10.5);
+      doc.setTextColor(6, 78, 59);
+      doc.text(formatCurrency(zakatAmount > 0 ? zakatAmount : 0), 152, yPos + 21);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`Kanal Pembayaran: QRIS & BSI 7888819198`, 118, yPos + 28);
+
+      // SECTION 2: BUKU TRANSAKSI & RIWAYAT PENYALURAN DONASI
+      yPos = 99;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(6, 78, 59);
+      doc.text('2. RIWAYAT TRANSAKSI ZAKAT & PENYALURAN DONASI TERCATAT', 14, yPos);
+
+      yPos += 4;
+      // Table Header
+      doc.setFillColor(6, 78, 59);
+      doc.rect(14, yPos, pageWidth - 28, 6.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7);
+      doc.setTextColor(255, 255, 255);
+      doc.text('NO', 16, yPos + 4.5);
+      doc.text('TANGGAL', 24, yPos + 4.5);
+      doc.text('JENIS ZAKAT / DONASI', 50, yPos + 4.5);
+      doc.text('DASAR HARTA', 98, yPos + 4.5);
+      doc.text('ZAKAT 2.5%', 128, yPos + 4.5);
+      doc.text('KANAL', 156, yPos + 4.5);
+      doc.text('STATUS', 182, yPos + 4.5);
+
+      yPos += 6.5;
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+
+      ledgerItems.forEach((item, index) => {
+        const rowBg = index % 2 === 0 ? 255 : 248;
+        doc.setFillColor(rowBg, rowBg, rowBg);
+        doc.rect(14, yPos, pageWidth - 28, 6.5, 'F');
+        doc.setDrawColor(226, 232, 240);
+        doc.line(14, yPos + 6.5, pageWidth - 14, yPos + 6.5);
+
+        doc.setTextColor(71, 85, 105);
+        doc.text(String(index + 1), 16, yPos + 4.5);
+        doc.text(item.date.slice(0, 12), 24, yPos + 4.5);
+        
+        doc.setTextColor(15, 23, 42);
+        doc.text(item.type.slice(0, 26), 50, yPos + 4.5);
+
+        doc.setTextColor(71, 85, 105);
+        doc.text(formatCurrency(item.netBaseAmount), 98, yPos + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        doc.setTextColor(6, 78, 59);
+        doc.text(formatCurrency(item.zakatDue), 128, yPos + 4.5);
+
+        doc.setFont('helvetica', 'normal');
+        doc.setTextColor(71, 85, 105);
+        doc.text(item.channel.slice(0, 14), 156, yPos + 4.5);
+
+        doc.setFont('helvetica', 'bold');
+        if (item.status.includes('Lunas')) {
+          doc.setTextColor(16, 140, 70);
+          doc.text('Lunas', 182, yPos + 4.5);
+        } else {
+          doc.setTextColor(180, 83, 9);
+          doc.text('Terjadwal', 182, yPos + 4.5);
+        }
+
+        yPos += 6.5;
+      });
+
+      // Total Row
+      doc.setFillColor(241, 245, 249);
+      doc.rect(14, yPos, pageWidth - 28, 7.5, 'F');
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(7.5);
+      doc.setTextColor(15, 23, 42);
+      doc.text('TOTAL AKUMULASI ZISWAF DIKELOLA:', 50, yPos + 5);
+      doc.setTextColor(6, 78, 59);
+      doc.setFontSize(8.5);
+      doc.text(formatCurrency(totalCalculatedZakat), 128, yPos + 5);
+
+      yPos += 14;
+
+      // SECTION 3: KOMITMEN PENYALURAN 8 ASNAF
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(9.5);
+      doc.setTextColor(6, 78, 59);
+      doc.text('3. PRINSIP SYARIAH & KOMITMEN PENYALURAN 8 ASNAF', 14, yPos);
+
+      yPos += 4;
+      doc.setFillColor(248, 250, 252);
+      doc.setDrawColor(226, 232, 240);
+      doc.roundedRect(14, yPos, pageWidth - 28, 22, 2, 2, 'FD');
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(51, 65, 85);
+      doc.text('• Fakir & Miskin (50%): Bantuan langsung sembako, kesehatan dhuafa, dan santunan yatim piatu.', 18, yPos + 5);
+      doc.text('• Fi Sabilillah / Dakwah (25%): Infrastruktur penyiaran TV dakwah ARTVISI, podcast syiar, & beasiswa santri digital.', 18, yPos + 10);
+      doc.text('• Amil Zakat & Operasional (12.5%): Standar operasional manajemen UPIC Limo dan audit akuntabel independen.', 18, yPos + 15);
+      doc.text('• Gharimin & Ibnu Sabil (12.5%): Pelepasan hutang mendesak jamaah serta bantuan musafir terdampar.', 18, yPos + 20);
+
+      yPos += 28;
+
+      // Signatures
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7.5);
+      doc.setTextColor(71, 85, 105);
+      doc.text('Muzakki / Donatur:', 20, yPos);
+      doc.text('Dewan Pengawas Syariah:', pageWidth - 70, yPos);
+
+      yPos += 13;
+      doc.setFont('helvetica', 'bold');
+      doc.setFontSize(8);
+      doc.setTextColor(15, 23, 42);
+      doc.text('Sahabat Jamaah Islamicity', 20, yPos);
+      doc.text('Dewan Syariah Islamicity & ARTVISI', pageWidth - 70, yPos);
+
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(6.5);
+      doc.setTextColor(100, 116, 139);
+      doc.text(`ID: ${ledgerItems[0]?.referenceNo || 'ISLM-VERIFIED'}`, 20, yPos + 4);
+      doc.text('Sertifikasi Fiqih Muamalah 1448 H', pageWidth - 70, yPos + 4);
+
+      // Bottom Footer Bar
+      doc.setFillColor(6, 78, 59);
+      doc.rect(0, pageHeight - 11, pageWidth, 11, 'F');
+      doc.setFont('helvetica', 'normal');
+      doc.setFontSize(7);
+      doc.setTextColor(209, 250, 229);
+      doc.text(
+        'Islamicity Media Superapp · Dokumen Digital Resmi Pengelolaan Zakat & Donasi Umat · Dicetak Otomatis',
+        pageWidth / 2,
+        pageHeight - 4.5,
+        { align: 'center' }
+      );
+
+      // Trigger file download
+      const fileName = `ringkasan_zakat_donasi_islamicity_${new Date().toISOString().slice(0, 10)}.pdf`;
+      doc.save(fileName);
+
+      setReportNotification(`Dokumen PDF "${fileName}" berhasil diunduh ke perangkat Anda!`);
+      setTimeout(() => setReportNotification(null), 4000);
+    } catch (err) {
+      console.error('PDF Generation Error:', err);
+      setReportNotification('Gagal mengunduh dokumen PDF. Silakan coba lagi.');
+      setTimeout(() => setReportNotification(null), 4000);
+    }
   };
+
+  // Download Report feature: generates a basic CSV file containing user's zakat calculation history from state or localStorage
+  const handleDownloadReportCsv = () => {
+    try {
+      // Retrieve history from state or fallback to localStorage
+      let historyItems: ZakatLedgerItem[] = ledgerItems;
+      if (!historyItems || historyItems.length === 0) {
+        const saved = localStorage.getItem(STORAGE_KEY);
+        if (saved) {
+          try {
+            historyItems = JSON.parse(saved);
+          } catch (e) {
+            console.error('Failed to parse localStorage zakat history', e);
+          }
+        }
+      }
+
+      if (!historyItems || historyItems.length === 0) {
+        historyItems = DEFAULT_LEDGER_ITEMS;
+      }
+
+      const headers = [
+        'ID Transaksi',
+        'Tanggal Transaksi',
+        'Jenis Zakat',
+        'Dasar Perhitungan Harta (Rp)',
+        'Nilai Nisab Acuan (Rp)',
+        'Total Zakat (2.5%) (Rp)',
+        'Status Pengelolaan',
+        'Kanal Penyaluran',
+        'Nomor Referensi'
+      ];
+
+      const rows = historyItems.map(item => [
+        `"${item.id}"`,
+        `"${item.date}"`,
+        `"${item.type}"`,
+        item.netBaseAmount,
+        item.nisabValue,
+        item.zakatDue,
+        `"${item.status}"`,
+        `"${item.channel}"`,
+        `"${item.referenceNo}"`
+      ]);
+
+      const csvContent = '\uFEFF' + [
+        '# RINGKASAN RIWAYAT PERHITUNGAN ZAKAT (ZAKAT CALCULATION HISTORY REPORT)',
+        '# Baitul Maal Islamicity Media & Unit Pelayanan Islamicity (UPIC)',
+        `# Tanggal Unduh: ${new Date().toLocaleString('id-ID')}`,
+        `# Harga Emas Acuan: Rp ${goldPricePerGram.toLocaleString('id-ID')} / gram`,
+        `# Total Transaksi Tercatat: ${historyItems.length}`,
+        headers.join(','),
+        ...rows.map(r => r.join(','))
+      ].join('\n');
+
+      const blob = new Blob([csvContent], { type: 'text/csv;charset=utf-8;' });
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.setAttribute('href', url);
+      link.setAttribute('download', `zakat_calculation_report_${new Date().toISOString().slice(0, 10)}.csv`);
+      document.body.appendChild(link);
+      link.click();
+      document.body.removeChild(link);
+      URL.revokeObjectURL(url);
+
+      setReportNotification(`Laporan riwayat zakat ("Download Report" CSV) berhasil diunduh (${historyItems.length} transaksi tercatat).`);
+      setTimeout(() => setReportNotification(null), 3500);
+    } catch (err) {
+      console.error('Error downloading CSV report:', err);
+      setReportNotification('Gagal mengunduh berkas CSV laporan zakat.');
+      setTimeout(() => setReportNotification(null), 3500);
+    }
+  };
+
+  const handleDownloadCsv = handleDownloadReportCsv;
 
   const totalCalculatedZakat = ledgerItems.reduce((acc, curr) => acc + curr.zakatDue, 0);
 
@@ -495,14 +813,42 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
               </p>
             </div>
 
-            {/* Save to Ledger Button */}
-            <button
-              onClick={handleSaveCalculationToLedger}
-              className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
-            >
-              <PlusCircle className="w-4 h-4 text-emerald-400" />
-              <span>Simpan Perhitungan Ini ke Ringkasan Transaksi</span>
-            </button>
+            {/* Save and Quick Export Action Strip */}
+            <div className="space-y-1.5">
+              <button
+                onClick={handleSaveCalculationToLedger}
+                className="w-full py-2 px-3 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center justify-center gap-2 transition-colors"
+              >
+                <PlusCircle className="w-4 h-4 text-emerald-400" />
+                <span>Simpan Perhitungan ke Ringkasan</span>
+              </button>
+              
+              <div className="grid grid-cols-2 gap-1.5">
+                <button
+                  onClick={() => {
+                    handleSaveCalculationToLedger();
+                    handleDownloadReportCsv();
+                  }}
+                  data-testid="download-report-btn-calc"
+                  className="py-1.5 px-2.5 rounded-lg bg-emerald-950/70 hover:bg-emerald-900 border border-emerald-600/50 text-emerald-300 text-[11px] font-bold flex items-center justify-center gap-1.5 transition-colors shadow-sm"
+                  title="Download Report (CSV) containing zakat calculation history"
+                >
+                  <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+                  <span>Download Report</span>
+                </button>
+                <button
+                  onClick={() => {
+                    handleSaveCalculationToLedger();
+                    handleDownloadPdf();
+                  }}
+                  className="py-1.5 px-2.5 rounded-lg bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-[11px] font-semibold flex items-center justify-center gap-1.5 transition-colors"
+                  title="Unduh bukti tanda terima perhitungan zakat format PDF"
+                >
+                  <Download className="w-3.5 h-3.5" />
+                  <span>Unduh PDF Bukti</span>
+                </button>
+              </div>
+            </div>
 
             {/* Sacred Niat Box */}
             <div className="p-3.5 rounded-lg bg-slate-900 border border-slate-800 text-xs">
@@ -558,21 +904,31 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
           {/* Download Action Buttons */}
           <div className="flex flex-wrap items-center gap-2.5">
             <button
-              onClick={handleDownloadCsv}
-              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
-              title="Unduh seluruh ringkasan dalam format CSV/Excel"
+              onClick={handleDownloadReportCsv}
+              data-testid="download-report-btn"
+              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-amber-500 hover:from-emerald-500 hover:to-amber-400 text-slate-950 text-xs font-bold flex items-center gap-2 transition-all shadow-md active:scale-95"
+              title="Download basic CSV report containing user's zakat calculation history stored in state or localStorage"
             >
-              <FileSpreadsheet className="w-4 h-4 text-emerald-400" />
-              <span>Unduh Format CSV</span>
+              <FileSpreadsheet className="w-4 h-4 text-slate-950" />
+              <span>Download Report</span>
+            </button>
+
+            <button
+              onClick={handleDownloadPdf}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
+              title="Unduh langsung berkas dokumen PDF (.pdf) resmi ke komputer atau HP"
+            >
+              <Download className="w-4 h-4 text-emerald-400" />
+              <span>Unduh Dokumen PDF (.pdf)</span>
             </button>
 
             <button
               onClick={() => setIsPdfModalOpen(true)}
-              className="px-4 py-2 rounded-xl bg-gradient-to-r from-emerald-600 to-amber-500 hover:from-emerald-500 hover:to-amber-400 text-slate-950 text-xs font-bold flex items-center gap-2 transition-all shadow-md"
-              title="Cetak atau unduh dokumen tanda terima PDF resmi"
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-2 transition-colors shadow-sm"
+              title="Lihat pratinjau surat bukti resmi sebelum dicetak"
             >
-              <Printer className="w-4 h-4 text-slate-950" />
-              <span>Unduh / Cetak Bukti PDF</span>
+              <Printer className="w-4 h-4 text-slate-400" />
+              <span>Pratinjau / Cetak</span>
             </button>
           </div>
         </div>
@@ -599,6 +955,28 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
           </div>
         </div>
 
+        {/* Search & Filter Bar with Download Report Button */}
+        <div className="flex flex-col sm:flex-row items-stretch sm:items-center gap-2.5">
+          <div className="relative flex-1">
+            <Search className="w-4 h-4 text-slate-400 absolute left-3.5 top-1/2 -translate-y-1/2" />
+            <input
+              type="text"
+              placeholder="Cari transaksi zakat (contoh: Penghasilan, Maal, Emas, Lunas, UPIC)..."
+              value={ledgerSearchTerm}
+              onChange={(e) => setLedgerSearchTerm(e.target.value)}
+              className="w-full pl-9 pr-3.5 py-2 bg-slate-950 border border-slate-750 rounded-lg text-xs text-white placeholder-slate-500 focus:outline-none focus:border-emerald-500"
+            />
+          </div>
+          <button
+            onClick={handleDownloadReportCsv}
+            className="px-3.5 py-2 bg-slate-800 hover:bg-slate-750 border border-slate-700 text-slate-200 text-xs font-semibold rounded-lg flex items-center justify-center gap-1.5 transition-colors shrink-0 shadow-sm"
+            title="Download CSV report containing zakat calculation history stored in state or localStorage"
+          >
+            <FileSpreadsheet className="w-3.5 h-3.5 text-emerald-400" />
+            <span>Download Report</span>
+          </button>
+        </div>
+
         {/* Ledger Table */}
         <div className="overflow-x-auto">
           <table className="w-full text-xs text-left border-collapse">
@@ -616,7 +994,16 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
               </tr>
             </thead>
             <tbody className="divide-y divide-slate-800/60 font-mono text-slate-300 tabular-nums">
-              {ledgerItems.map((item, idx) => (
+              {ledgerItems
+                .filter(item => 
+                  ledgerSearchTerm === '' ||
+                  item.type.toLowerCase().includes(ledgerSearchTerm.toLowerCase()) ||
+                  item.id.toLowerCase().includes(ledgerSearchTerm.toLowerCase()) ||
+                  item.date.toLowerCase().includes(ledgerSearchTerm.toLowerCase()) ||
+                  item.status.toLowerCase().includes(ledgerSearchTerm.toLowerCase()) ||
+                  item.channel.toLowerCase().includes(ledgerSearchTerm.toLowerCase())
+                )
+                .map((item, idx) => (
                 <tr key={item.id} className="hover:bg-slate-800/40 transition-colors">
                   <td className="py-3 px-3 font-semibold text-white">
                     {item.id}
@@ -675,11 +1062,28 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
               </span>
               <div className="flex items-center gap-2">
                 <button
-                  onClick={() => window.print()}
-                  className="px-4 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+                  onClick={handleDownloadReportCsv}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-800 hover:bg-emerald-700 text-white text-xs font-semibold flex items-center gap-1.5 transition-colors shadow"
+                  title="Download basic CSV report containing user's zakat calculation history"
                 >
-                  <Printer className="w-4 h-4" />
-                  <span>Cetak / Simpan PDF</span>
+                  <FileSpreadsheet className="w-4 h-4 text-emerald-300" />
+                  <span>Download Report (CSV)</span>
+                </button>
+                <button
+                  onClick={handleDownloadPdf}
+                  className="px-3.5 py-2 rounded-lg bg-emerald-700 hover:bg-emerald-800 text-white text-xs font-bold flex items-center gap-1.5 transition-colors shadow"
+                  title="Unduh langsung dokumen PDF resmi ke perangkat"
+                >
+                  <Download className="w-4 h-4" />
+                  <span>Unduh File PDF (.pdf)</span>
+                </button>
+                <button
+                  onClick={() => window.print()}
+                  className="px-3.5 py-2 rounded-lg bg-slate-100 hover:bg-slate-200 text-slate-800 text-xs font-semibold flex items-center gap-1.5 transition-colors border border-slate-300"
+                  title="Cetak langsung menggunakan dialog printer"
+                >
+                  <Printer className="w-4 h-4 text-slate-600" />
+                  <span>Cetak</span>
                 </button>
                 <button
                   onClick={() => setIsPdfModalOpen(false)}

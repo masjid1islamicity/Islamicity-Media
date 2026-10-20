@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ForumPost } from '../types/islamicity';
+import { MutabaahHafalanSection } from './MutabaahHafalanSection';
 import { 
   Users, 
   MessageSquare, 
@@ -11,10 +12,14 @@ import {
   Clock, 
   MapPin,
   HelpCircle,
-  X
+  X,
+  BookOpen,
+  ListChecks,
+  Flame
 } from 'lucide-react';
 
 export const CommunityForumSection: React.FC = () => {
+  const [subTab, setSubTab] = useState<'mutabaah' | 'forum'>('mutabaah');
   const [posts, setPosts] = useState<ForumPost[]>([
     {
       id: 'post-1',
@@ -166,47 +171,92 @@ export const CommunityForumSection: React.FC = () => {
   });
 
   return (
-    <div className="space-y-8 max-w-5xl mx-auto">
-      {/* Header */}
-      <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-        <div>
-          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-            <Users className="w-6 h-6 text-emerald-400" />
-            <span>Forum Diskusi Interaktif & Konsultasi Syariah</span>
-          </h2>
-          <p className="text-sm text-slate-400 mt-1">
-            Ruang musyawarah jamaah, tanya ustadz, dan kolaborasi program kemandirian ekonomi umat.
-          </p>
-        </div>
-
-        <button
-          onClick={() => setIsNewPostModalOpen(true)}
-          className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 self-start sm:self-auto"
-        >
-          <PlusCircle className="w-4 h-4" />
-          <span>Buka Topik Diskusi Baru</span>
-        </button>
-      </div>
-
-      {/* Category Filter */}
-      <div className="flex items-center gap-2 overflow-x-auto py-1">
-        {categories.map((cat) => (
+    <div className="space-y-6 max-w-5xl mx-auto">
+      {/* Sub-navigation Switcher inside Komunitas */}
+      <div className="bg-slate-900/90 border border-slate-800 p-1.5 rounded-2xl flex flex-col sm:flex-row items-stretch sm:items-center justify-between gap-2 shadow-lg">
+        <div className="flex items-center gap-1.5 overflow-x-auto p-0.5">
           <button
-            key={cat}
-            onClick={() => setActiveCategory(cat)}
-            className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
-              activeCategory === cat
-                ? 'bg-emerald-600 text-white font-semibold'
-                : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-850'
+            onClick={() => setSubTab('mutabaah')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              subTab === 'mutabaah'
+                ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
             }`}
           >
-            {cat}
+            <BookOpen className="w-4 h-4 text-emerald-300" />
+            <span>Mutaba'ah Harian Hafalan Al-Qur'an</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-emerald-950 text-emerald-300 border border-emerald-700/60">
+              Check-list Mingguan
+            </span>
           </button>
-        ))}
+
+          <button
+            onClick={() => setSubTab('forum')}
+            className={`px-4 py-2.5 rounded-xl text-xs font-bold transition-all flex items-center gap-2 whitespace-nowrap ${
+              subTab === 'forum'
+                ? 'bg-gradient-to-r from-emerald-600 to-emerald-500 text-white shadow-md'
+                : 'text-slate-400 hover:text-slate-200 hover:bg-slate-850'
+            }`}
+          >
+            <MessageSquare className="w-4 h-4 text-emerald-300" />
+            <span>Forum Diskusi & Tanya Ustadz</span>
+            <span className="px-2 py-0.5 rounded-full text-[10px] font-bold bg-slate-800 text-slate-300">
+              {posts.length} Topik
+            </span>
+          </button>
+        </div>
+
+        <div className="hidden lg:flex items-center gap-2 px-3 text-[11px] text-slate-400">
+          <Flame className="w-3.5 h-3.5 text-amber-400 fill-amber-400" />
+          <span>Komunitas Huffazh & Umat Berdaya Islamicity</span>
+        </div>
       </div>
 
-      {/* Posts Stream */}
-      <div className="space-y-4">
+      {/* View Conditional */}
+      {subTab === 'mutabaah' ? (
+        <MutabaahHafalanSection />
+      ) : (
+        <div className="space-y-6">
+          {/* Header */}
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
+            <div>
+              <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+                <Users className="w-6 h-6 text-emerald-400" />
+                <span>Forum Diskusi Interaktif & Konsultasi Syariah</span>
+              </h2>
+              <p className="text-sm text-slate-400 mt-1">
+                Ruang musyawarah jamaah, tanya ustadz, dan kolaborasi program kemandirian ekonomi umat.
+              </p>
+            </div>
+
+            <button
+              onClick={() => setIsNewPostModalOpen(true)}
+              className="px-4 py-2.5 rounded-xl bg-emerald-600 hover:bg-emerald-500 text-white text-xs font-bold transition-all shadow-md flex items-center gap-2 self-start sm:self-auto"
+            >
+              <PlusCircle className="w-4 h-4" />
+              <span>Buka Topik Diskusi Baru</span>
+            </button>
+          </div>
+
+          {/* Category Filter */}
+          <div className="flex items-center gap-2 overflow-x-auto py-1">
+            {categories.map((cat) => (
+              <button
+                key={cat}
+                onClick={() => setActiveCategory(cat)}
+                className={`px-3 py-1.5 text-xs font-medium rounded-lg whitespace-nowrap transition-colors ${
+                  activeCategory === cat
+                    ? 'bg-emerald-600 text-white font-semibold'
+                    : 'bg-slate-900 border border-slate-800 text-slate-300 hover:bg-slate-850'
+                }`}
+              >
+                {cat}
+              </button>
+            ))}
+          </div>
+
+          {/* Posts Stream */}
+          <div className="space-y-4">
         {filteredPosts.map((post) => (
           <div
             key={post.id}
@@ -388,6 +438,8 @@ export const CommunityForumSection: React.FC = () => {
               </div>
             </form>
           </div>
+        </div>
+      )}
         </div>
       )}
     </div>
