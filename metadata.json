@@ -1,0 +1,6 @@
+{
+  "name": "Islamicity Media Superapp - City Media & Global TV",
+  "description": "Infrastruktur platform dan superaplikasi Islamicity Media mengintegrasikan siaran dakwah, TV & radio streaming ARTVISI, edukasi syariah, kalkulator zakat & QRIS, jutaan sholawat, serta analitik dampak sosial real-time.",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
