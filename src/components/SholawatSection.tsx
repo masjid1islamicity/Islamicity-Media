@@ -1,4 +1,4 @@
-import React, { useState } from 'react';
+import React, { useState, useEffect } from 'react';
 import { 
   Heart, 
   Share2, 
@@ -6,15 +6,29 @@ import {
   Sparkles, 
   Copy, 
   Award, 
-  Volume2, 
   BookOpen, 
   MessageCircle, 
-  Send 
+  Send,
+  Target,
+  CheckCircle2,
+  RotateCcw
 } from 'lucide-react';
 
 interface SholawatSectionProps {
   sholawatCount: number;
   onIncrementSholawat: (incrementBy?: number) => void;
+}
+
+const DAILY_GOAL_KEY = 'islamicity_sholawat_daily_goal';
+const DAILY_PROGRESS_KEY = 'islamicity_sholawat_daily_progress';
+const GOAL_PRESETS = [33, 100, 313, 1000];
+
+function getTodayDateKey(): string {
+  const now = new Date();
+  const y = now.getFullYear();
+  const m = String(now.getMonth() + 1).padStart(2, '0');
+  const d = String(now.getDate()).padStart(2, '0');
+  return `${y}-${m}-${d}`;
 }
 
 export const SholawatSection: React.FC<SholawatSectionProps> = ({
@@ -24,16 +38,93 @@ export const SholawatSection: React.FC<SholawatSectionProps> = ({
   const [justTapped, setJustTapped] = useState(false);
   const [personalSessionCount, setPersonalSessionCount] = useState(0);
   const [copiedBroadcast, setCopiedBroadcast] = useState(false);
-  const [customAdd, setCustomAdd] = useState<number>(1);
+
+  // Personal Daily Goal (persisted in localStorage)
+  const [dailyGoal, setDailyGoal] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(DAILY_GOAL_KEY);
+      if (saved) {
+        const parsed = parseInt(saved, 10);
+        if (!Number.isNaN(parsed) && parsed >= 1) return parsed;
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 100;
+  });
+
+  const [goalInput, setGoalInput] = useState<string>(() => String(dailyGoal));
+
+  // Today's personal Sholawat count (resets automatically on a new calendar day)
+  const [dailyCount, setDailyCount] = useState<number>(() => {
+    try {
+      const saved = localStorage.getItem(DAILY_PROGRESS_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved) as { dateKey?: string; count?: number };
+        if (parsed.dateKey === getTodayDateKey() && typeof parsed.count === 'number') {
+          return Math.max(0, parsed.count);
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return 0;
+  });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(DAILY_GOAL_KEY, String(dailyGoal));
+    } catch {
+      // ignore storage errors
+    }
+  }, [dailyGoal]);
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(
+        DAILY_PROGRESS_KEY,
+        JSON.stringify({ dateKey: getTodayDateKey(), count: dailyCount })
+      );
+    } catch {
+      // ignore storage errors
+    }
+  }, [dailyCount]);
 
   const targetCount = 10000000;
   const progressPercent = Math.min(100, (sholawatCount / targetCount) * 100);
 
+  // Daily Goal Circular Progress Bar metrics
+  const safeGoal = Math.max(1, dailyGoal);
+  const dailyRatio = Math.min(1, dailyCount / safeGoal);
+  const dailyPercent = Math.round(dailyRatio * 100);
+  const remainingToday = Math.max(0, safeGoal - dailyCount);
+  const isGoalReached = dailyCount >= safeGoal;
+
+  const circleSize = 148;
+  const strokeWidth = 12;
+  const radius = (circleSize - strokeWidth) / 2;
+  const circumference = 2 * Math.PI * radius;
+  const strokeDashoffset = circumference * (1 - dailyRatio);
+
   const handleTap = (amount = 1) => {
     onIncrementSholawat(amount);
     setPersonalSessionCount(prev => prev + amount);
+    setDailyCount(prev => prev + amount);
     setJustTapped(true);
     setTimeout(() => setJustTapped(false), 300);
+  };
+
+  const handleSelectGoalPreset = (val: number) => {
+    setDailyGoal(val);
+    setGoalInput(String(val));
+  };
+
+  const handleGoalInputChange = (raw: string) => {
+    setGoalInput(raw);
+    const parsed = parseInt(raw, 10);
+    if (!Number.isNaN(parsed) && parsed >= 1 && parsed <= 100000) {
+      setDailyGoal(parsed);
+    }
   };
 
   const broadcastMessage = `Bismillahirrahmaanirrahiim …\n\nKami ingin mengajak dengan jutaan Sholawat bersama kepada Sahabat yang mencintai Rasulullah Muhammad SAW.\nDengan jutaan orang berdzikir, Semoga Negara2 Islam diselamatkan Allah SWT.\n\nKITA SEMUA UMAT RASULULLAH SAW..!!!\n\n*ALLAHUMMA SHALLI’ALA SAYYIDINA MUHAMMAD,*\n*WA’ALA AALI SAYYIDINA MUHAMMAD*\n\nاللّٰهم صَلِّ عَلَی سَيِّدِنَا مُحَمَّدٍ وَ عَلَی آلِ سَيِّدِنَا مُحَمَّدﷺ\n\nKirim kepada semua sahabat Muslim dan INSYA ALLAH ramailah orang bersama-sama membaca Keindahan dan Keagungan Kepribadian Rasulullah SAW, Sang Manusia Agung Kekasih Allah SWT.\n\nAnggaplah sebagai sedekah Jariyah..!!\nKunjungi platform: http://global.media.islamicity.tv`;
@@ -143,6 +234,174 @@ export const SholawatSection: React.FC<SholawatSectionProps> = ({
               Alhamdulillah! Anda telah membaca <span className="font-bold text-white font-mono">{personalSessionCount}</span> sholawat pada sesi ini.
             </div>
           )}
+        </div>
+      </div>
+
+      {/* Personal Daily Goal Card with Circular Progress Bar */}
+      <div className="bg-slate-900 border border-slate-800 rounded-2xl p-6 shadow-lg">
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-6 items-center">
+          {/* Left: Circular Progress Indicator (4 cols) */}
+          <div className="md:col-span-4 flex flex-col items-center justify-center p-4 rounded-xl bg-slate-950 border border-slate-800/80">
+            <div className="relative inline-flex items-center justify-center">
+              <svg
+                width={circleSize}
+                height={circleSize}
+                viewBox={`0 0 ${circleSize} ${circleSize}`}
+                className="-rotate-90"
+                role="progressbar"
+                aria-valuenow={dailyPercent}
+                aria-valuemin={0}
+                aria-valuemax={100}
+                aria-label={`Progres target sholawat harian ${dailyPercent}%`}
+              >
+                <defs>
+                  <linearGradient id="sholawatGoalGradient" x1="0%" y1="0%" x2="100%" y2="0%">
+                    <stop offset="0%" stopColor="#10b981" />
+                    <stop offset="100%" stopColor="#fbbf24" />
+                  </linearGradient>
+                </defs>
+                {/* Background Track */}
+                <circle
+                  cx={circleSize / 2}
+                  cy={circleSize / 2}
+                  r={radius}
+                  fill="none"
+                  stroke="#1e293b"
+                  strokeWidth={strokeWidth}
+                />
+                {/* Progress Arc */}
+                <circle
+                  cx={circleSize / 2}
+                  cy={circleSize / 2}
+                  r={radius}
+                  fill="none"
+                  stroke="url(#sholawatGoalGradient)"
+                  strokeWidth={strokeWidth}
+                  strokeLinecap="round"
+                  strokeDasharray={circumference}
+                  strokeDashoffset={strokeDashoffset}
+                  className="transition-all duration-500 ease-out"
+                />
+              </svg>
+
+              {/* Center Percentage & Ratio */}
+              <div className="absolute inset-0 flex flex-col items-center justify-center text-center">
+                <span
+                  className={`text-2xl font-black font-mono tabular-nums ${
+                    isGoalReached ? 'text-amber-300' : 'text-white'
+                  }`}
+                >
+                  {dailyPercent}%
+                </span>
+                <span className="text-[11px] font-mono text-slate-400 tabular-nums mt-0.5">
+                  {dailyCount.toLocaleString('id-ID')} / {safeGoal.toLocaleString('id-ID')}
+                </span>
+              </div>
+            </div>
+
+            <div className="mt-3 text-center">
+              {isGoalReached ? (
+                <div className="text-xs font-bold text-emerald-400 flex items-center justify-center gap-1.5">
+                  <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+                  <span>Target Harian Tercapai!</span>
+                </div>
+              ) : (
+                <div className="text-xs text-slate-400 tabular-nums">
+                  Tersisa <strong className="text-amber-300">{remainingToday.toLocaleString('id-ID')}</strong> sholawat lagi hari ini
+                </div>
+              )}
+            </div>
+          </div>
+
+          {/* Right: Target Configuration & Quick Actions (8 cols) */}
+          <div className="md:col-span-8 space-y-4">
+            <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2 pb-3 border-b border-slate-800">
+              <div>
+                <h3 className="text-lg font-bold text-white flex items-center gap-2">
+                  <Target className="w-5 h-5 text-amber-400" />
+                  <span>Target Harian Sholawat (Daily Goal)</span>
+                </h3>
+                <p className="text-xs text-slate-400 mt-0.5">
+                  Tetapkan target wirid sholawat pribadi setiap hari dan pantau pencapaian Anda secara konsisten.
+                </p>
+              </div>
+              {dailyCount > 0 && (
+                <button
+                  type="button"
+                  onClick={() => setDailyCount(0)}
+                  className="text-[11px] text-slate-400 hover:text-slate-200 flex items-center gap-1 self-start sm:self-auto shrink-0"
+                  title="Reset hitungan sholawat pribadi hari ini"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                  <span>Reset Hari Ini</span>
+                </button>
+              )}
+            </div>
+
+            {/* Presets + Custom Numeric Input */}
+            <div className="grid grid-cols-1 sm:grid-cols-2 gap-4 items-end">
+              <div className="space-y-1.5">
+                <label className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400">
+                  Pilih Target Cepat
+                </label>
+                <div className="flex flex-wrap items-center gap-1.5">
+                  {GOAL_PRESETS.map((preset) => (
+                    <button
+                      key={preset}
+                      type="button"
+                      onClick={() => handleSelectGoalPreset(preset)}
+                      className={`px-3 py-2 rounded-lg text-xs font-mono font-bold transition-colors tabular-nums ${
+                        dailyGoal === preset
+                          ? 'bg-emerald-600 text-slate-950'
+                          : 'bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-300'
+                      }`}
+                    >
+                      {preset.toLocaleString('id-ID')}x
+                    </button>
+                  ))}
+                </div>
+              </div>
+
+              <div className="space-y-1.5">
+                <label
+                  htmlFor="sholawat-daily-goal-input"
+                  className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+                >
+                  Atau Atur Target Kustom (1 – 100.000)
+                </label>
+                <input
+                  id="sholawat-daily-goal-input"
+                  type="number"
+                  min={1}
+                  max={100000}
+                  value={goalInput}
+                  onChange={(e) => handleGoalInputChange(e.target.value)}
+                  onBlur={() => setGoalInput(String(dailyGoal))}
+                  className="w-full px-3.5 py-2 rounded-lg bg-slate-950 border border-slate-700 text-sm font-mono text-white focus:outline-none focus:border-emerald-500 tabular-nums"
+                />
+              </div>
+            </div>
+
+            {/* Motivational Status Footer */}
+            <div className="p-3 rounded-lg bg-slate-950/70 border border-slate-800 flex flex-wrap items-center justify-between gap-2 text-xs text-slate-300">
+              <span>
+                {isGoalReached
+                  ? `MasyaAllah! Anda telah melampaui target ${safeGoal.toLocaleString('id-ID')} sholawat hari ini${
+                      dailyCount > safeGoal
+                        ? ` (+${(dailyCount - safeGoal).toLocaleString('id-ID')} tambahan)`
+                        : ''
+                    }.`
+                  : 'Setiap ketukan tombol sholawat di atas otomatis menambah progres target harian Anda.'}
+              </span>
+              <button
+                type="button"
+                onClick={() => handleTap(1)}
+                className="px-3 py-1 rounded-md bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold transition-colors whitespace-nowrap"
+              >
+                +1 Sholawat Sekarang
+              </button>
+            </div>
+          </div>
         </div>
       </div>
 

@@ -1,9 +1,10 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useRef } from 'react';
 import { 
   Clock, 
   MapPin, 
   Bell, 
   BellOff, 
+  BellRing,
   Volume2, 
   Calendar, 
   CheckCircle2, 
@@ -13,9 +14,8 @@ import {
   ShieldCheck, 
   AlertCircle,
   Globe,
-  Settings,
   BookOpen,
-  ArrowRight
+  Send
 } from 'lucide-react';
 import { 
   calculatePrayerTimes, 
@@ -25,7 +25,27 @@ import {
   CalculationMethod
 } from '../utils/prayerTimes';
 import { DEFAULT_CITIES } from '../utils/qibla';
-import { PrayerAlarmSettings, PrayerTimesSchedule } from '../types/islamicity';
+import { PrayerAlarmSettings } from '../types/islamicity';
+import {
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+  sendWebNotification,
+  loadNotificationPreferences,
+} from '../services/notificationService';
+
+const PRAYER_PUSH_STORAGE_KEY = 'islamicity_prayer_push_alerts';
+const PRAYER_NOTIFIED_STORAGE_KEY = 'islamicity_prayer_notified_today';
+
+const DEFAULT_PRAYER_ALARMS: PrayerAlarmSettings = {
+  imsak: false,
+  subuh: true,
+  terbit: false,
+  dhuha: false,
+  dzuhur: true,
+  ashar: true,
+  maghrib: true,
+  isya: true
+};
 
 export const PrayerTimeSchedulerSection: React.FC = () => {
   // Location state
@@ -42,17 +62,62 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
   // Real-time clock state
   const [currentTime, setCurrentTime] = useState<Date>(new Date());
 
-  // Alarm settings per prayer
-  const [alarmSettings, setAlarmSettings] = useState<PrayerAlarmSettings>({
-    imsak: false,
-    subuh: true,
-    terbit: false,
-    dhuha: false,
-    dzuhur: true,
-    ashar: true,
-    maghrib: true,
-    isya: true
+  // Browser Web Notification API permission state
+  const [notificationPermission, setNotificationPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermissionStatus()
+  );
+  const [notificationFeedback, setNotificationFeedback] = useState<{
+    type: 'success' | 'warning' | 'info';
+    message: string;
+  } | null>(null);
+  const [livePrayerAlert, setLivePrayerAlert] = useState<{
+    name: string;
+    time: string;
+  } | null>(null);
+
+  // Per-prayer push notification toggles (persisted in localStorage)
+  const [alarmSettings, setAlarmSettings] = useState<PrayerAlarmSettings>(() => {
+    try {
+      const saved = localStorage.getItem(PRAYER_PUSH_STORAGE_KEY);
+      if (saved) {
+        return { ...DEFAULT_PRAYER_ALARMS, ...JSON.parse(saved) };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return DEFAULT_PRAYER_ALARMS;
   });
+
+  useEffect(() => {
+    try {
+      localStorage.setItem(PRAYER_PUSH_STORAGE_KEY, JSON.stringify(alarmSettings));
+    } catch {
+      // ignore storage errors
+    }
+  }, [alarmSettings]);
+
+  // Track which prayers already fired a notification today to prevent duplicates
+  const notifiedPrayersRef = useRef<Set<string>>(new Set());
+  useEffect(() => {
+    try {
+      const saved = localStorage.getItem(PRAYER_NOTIFIED_STORAGE_KEY);
+      if (saved) {
+        const parsed = JSON.parse(saved);
+        if (Array.isArray(parsed)) {
+          notifiedPrayersRef.current = new Set(parsed);
+        }
+      }
+    } catch {
+      // ignore storage errors
+    }
+  }, []);
+
+  // Sync permission state when window regains focus (e.g. user changed browser setting)
+  useEffect(() => {
+    const syncPermission = () => setNotificationPermission(getNotificationPermissionStatus());
+    window.addEventListener('focus', syncPermission);
+    return () => window.removeEventListener('focus', syncPermission);
+  }, []);
 
   // Daily prayer completion tracker (persisted locally)
   const [completedPrayers, setCompletedPrayers] = useState<{ [key: string]: boolean }>(() => {
@@ -78,6 +143,137 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
 
   // Generate 7-day upcoming weekly schedule
   const weeklySchedule = generateWeeklySchedule(latitude, longitude, currentTime, timezoneOffset, selectedMethod);
+
+  // Helper to dispatch a prayer time Web Notification safely once per prayer per day
+  const dispatchPrayerAlert = (prayerName: string, prayerKey: string, prayerTime: string) => {
+    const dateKey = new Date().toISOString().slice(0, 10);
+    const dedupeKey = `${dateKey}:${prayerKey}`;
+    if (notifiedPrayersRef.current.has(dedupeKey)) return;
+
+    notifiedPrayersRef.current.add(dedupeKey);
+    try {
+      // Keep only today's entries in storage
+      const todayEntries = Array.from(notifiedPrayersRef.current).filter((k) =>
+        k.startsWith(dateKey)
+      );
+      localStorage.setItem(PRAYER_NOTIFIED_STORAGE_KEY, JSON.stringify(todayEntries));
+    } catch {
+      // ignore storage errors
+    }
+
+    const prefs = loadNotificationPreferences();
+    const isFardhu = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'].includes(prayerKey);
+    const title = isFardhu
+      ? `Waktu Sholat ${prayerName} (${prayerTime})`
+      : `Pengingat Waktu ${prayerName} (${prayerTime})`;
+    const body = isFardhu
+      ? `Allahu Akbar, telah masuk waktu ${prayerName} untuk wilayah ${currentCityName}. Mari bersiap menunaikan sholat.`
+      : `Telah masuk waktu ${prayerName} (${prayerTime}) untuk wilayah ${currentCityName}.`;
+
+    sendWebNotification(title, {
+      body,
+      tag: `islamicity-prayer-${dedupeKey}`,
+      requireInteraction: isFardhu,
+      playSound: prefs.soundEnabled,
+    });
+
+    setLivePrayerAlert({ name: prayerName, time: prayerTime });
+  };
+
+  // Monitor current time every tick and fire push notification when an enabled prayer time arrives
+  useEffect(() => {
+    const nowMs = currentTime.getTime();
+    for (const prayer of prayers) {
+      if (!alarmSettings[prayer.key]) continue;
+      if (nowMs >= prayer.timestamp && nowMs < prayer.timestamp + 60_000) {
+        dispatchPrayerAlert(prayer.name, prayer.key, prayer.time);
+      }
+    }
+  }, [currentTime, prayers, alarmSettings, currentCityName]);
+
+  // Also schedule an exact timeout for the next enabled prayer today
+  useEffect(() => {
+    const nowMs = Date.now();
+    const nextEnabled = prayers.find(
+      (p) => alarmSettings[p.key] && p.timestamp > nowMs
+    );
+    if (!nextEnabled) return;
+
+    const delayMs = nextEnabled.timestamp - nowMs;
+    // Cap timeout at 24h to avoid 32-bit timer overflow
+    if (delayMs <= 0 || delayMs > 24 * 60 * 60 * 1000) return;
+
+    const timeoutId = window.setTimeout(() => {
+      dispatchPrayerAlert(nextEnabled.name, nextEnabled.key, nextEnabled.time);
+    }, delayMs);
+
+    return () => window.clearTimeout(timeoutId);
+  }, [prayers, alarmSettings, currentCityName]);
+
+  const showFeedback = (type: 'success' | 'warning' | 'info', message: string) => {
+    setNotificationFeedback({ type, message });
+    window.setTimeout(() => {
+      setNotificationFeedback((prev) => (prev?.message === message ? null : prev));
+    }, 5000);
+  };
+
+  const handleRequestBrowserPermission = async () => {
+    if (notificationPermission === 'unsupported') {
+      showFeedback('warning', 'Browser Anda tidak mendukung Web Notification API.');
+      return;
+    }
+    const granted = await requestNotificationPermission();
+    const updatedStatus = getNotificationPermissionStatus();
+    setNotificationPermission(updatedStatus);
+    if (granted) {
+      showFeedback(
+        'success',
+        'Izin notifikasi push aktif! Anda akan menerima pengingat otomatis saat masuk waktu sholat yang dipilih.'
+      );
+      sendWebNotification('Pengingat Sholat Islamicity Aktif', {
+        body: `Notifikasi push waktu sholat untuk ${currentCityName} telah diaktifkan.`,
+        tag: 'islamicity-prayer-permission-ready',
+      });
+    } else if (updatedStatus === 'denied') {
+      showFeedback(
+        'warning',
+        'Izin notifikasi diblokir browser. Buka pengaturan situs (ikon gembok di bilah URL) lalu ubah Notifikasi ke "Izinkan".'
+      );
+    }
+  };
+
+  const handleTestPrayerPushNotification = async () => {
+    if (notificationPermission === 'unsupported') {
+      showFeedback('warning', 'Web Notification API tidak tersedia di browser ini.');
+      return;
+    }
+    if (notificationPermission === 'default') {
+      const granted = await requestNotificationPermission();
+      setNotificationPermission(getNotificationPermissionStatus());
+      if (!granted) {
+        showFeedback('warning', 'Izin notifikasi belum diberikan sehingga notifikasi browser tidak dapat ditampilkan.');
+        return;
+      }
+    }
+    if (getNotificationPermissionStatus() === 'denied') {
+      showFeedback(
+        'warning',
+        'Notifikasi diblokir oleh browser. Izinkan notifikasi di setelan situs untuk menerima push alert.'
+      );
+      return;
+    }
+
+    const target = currentNextPrayer || prayers[1];
+    const sent = sendWebNotification(`Uji Pengingat: Waktu ${target.name} (${target.time})`, {
+      body: `Simulasi notifikasi waktu sholat untuk ${currentCityName}. Pengingat per waktu sholat siap digunakan.`,
+      tag: 'islamicity-prayer-test',
+      playSound: true,
+    });
+
+    if (sent) {
+      showFeedback('success', `Notifikasi push uji coba untuk waktu ${target.name} berhasil dikirim!`);
+    }
+  };
 
   // Format countdown
   const formatCountdown = (ms: number): string => {
@@ -139,11 +335,72 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
     }
   };
 
-  const toggleAlarm = (key: string) => {
+  const toggleAlarm = async (key: string, label: string, timeStr: string) => {
+    const nextValue = !(alarmSettings[key] ?? false);
+
     setAlarmSettings(prev => ({
       ...prev,
-      [key]: !prev[key]
+      [key]: nextValue
     }));
+
+    if (nextValue) {
+      const currentStatus = getNotificationPermissionStatus();
+      setNotificationPermission(currentStatus);
+
+      if (currentStatus === 'unsupported') {
+        showFeedback(
+          'info',
+          `Pengingat ${label} (${timeStr}) disimpan, namun browser ini tidak mendukung Web Notification API.`
+        );
+      } else if (currentStatus === 'default') {
+        const granted = await requestNotificationPermission();
+        const updatedStatus = getNotificationPermissionStatus();
+        setNotificationPermission(updatedStatus);
+        if (granted) {
+          showFeedback('success', `Push notifikasi untuk ${label} (${timeStr}) aktif dan diizinkan browser.`);
+        } else {
+          showFeedback(
+            'warning',
+            `Pengingat ${label} diaktifkan, namun izin notifikasi browser belum diberikan.`
+          );
+        }
+      } else if (currentStatus === 'denied') {
+        showFeedback(
+          'warning',
+          `Pengingat ${label} diaktifkan, tetapi notifikasi browser sedang diblokir. Izinkan di pengaturan situs agar alert muncul.`
+        );
+      } else {
+        showFeedback('success', `Notifikasi push untuk ${label} (${timeStr}) diaktifkan.`);
+      }
+    } else {
+      showFeedback('info', `Notifikasi push untuk ${label} (${timeStr}) dinonaktifkan.`);
+    }
+  };
+
+  const toggleAllFardhuAlarms = async (enable: boolean) => {
+    setAlarmSettings((prev) => ({
+      ...prev,
+      subuh: enable,
+      dzuhur: enable,
+      ashar: enable,
+      maghrib: enable,
+      isya: enable,
+    }));
+
+    if (enable && getNotificationPermissionStatus() === 'default') {
+      const granted = await requestNotificationPermission();
+      setNotificationPermission(getNotificationPermissionStatus());
+      if (granted) {
+        showFeedback('success', 'Push notifikasi 5 waktu sholat fardhu berhasil diaktifkan.');
+        return;
+      }
+    }
+    showFeedback(
+      enable ? 'success' : 'info',
+      enable
+        ? 'Notifikasi push untuk 5 waktu sholat fardhu diaktifkan.'
+        : 'Notifikasi push untuk 5 waktu sholat fardhu dimatikan.'
+    );
   };
 
   const togglePrayerCompletion = (key: string) => {
@@ -171,6 +428,8 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
       osc.stop(audioCtx.currentTime + 1.2);
     } catch (_) {}
   };
+
+  const enabledPushCount = prayers.filter((p) => alarmSettings[p.key]).length;
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -204,6 +463,29 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
         </div>
       )}
 
+      {livePrayerAlert && (
+        <div className="p-4 rounded-xl bg-emerald-950/80 border border-emerald-400/60 text-emerald-100 text-xs flex items-center justify-between gap-3 shadow-lg">
+          <div className="flex items-center gap-2.5">
+            <BellRing className="w-5 h-5 text-amber-300 shrink-0" />
+            <div>
+              <strong className="text-sm text-white block">
+                Telah Masuk Waktu {livePrayerAlert.name} ({livePrayerAlert.time})
+              </strong>
+              <span className="text-emerald-200">
+                Wilayah {currentCityName}. Mari bersiap menunaikan ibadah tepat pada waktunya.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={() => setLivePrayerAlert(null)}
+            className="px-3 py-1 rounded-lg bg-slate-900/80 hover:bg-slate-800 text-slate-200 text-xs font-semibold shrink-0"
+          >
+            Tutup
+          </button>
+        </div>
+      )}
+
       {/* Hero Live Countdown & Next Prayer Highlight Card */}
       <div className="relative rounded-2xl bg-gradient-to-r from-emerald-950 via-slate-900 to-slate-950 border border-emerald-800/40 p-6 sm:p-8 shadow-2xl overflow-hidden">
         {/* Glow */}
@@ -225,7 +507,7 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
               Luruskan niat dan persiapkan diri menyambut seruan adzan.
             </p>
 
-            <div className="flex items-center gap-3 pt-2">
+            <div className="flex flex-wrap items-center gap-2.5 pt-2">
               <button
                 onClick={handlePlayAdhanSound}
                 className="px-3.5 py-1.5 rounded-lg bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors"
@@ -233,6 +515,15 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
               >
                 <Volume2 className="w-3.5 h-3.5 text-emerald-400" />
                 <span>Uji Nada Pengingat</span>
+              </button>
+              <button
+                type="button"
+                onClick={handleTestPrayerPushNotification}
+                className="px-3.5 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-xs font-semibold flex items-center gap-1.5 transition-colors"
+                title="Kirim notifikasi uji coba via Web Notification API"
+              >
+                <Send className="w-3.5 h-3.5 text-emerald-400" />
+                <span>Tes Push Notifikasi</span>
               </button>
             </div>
           </div>
@@ -252,15 +543,109 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
         </div>
       </div>
 
-      {/* Today's 8 Daily Prayer Times Cards Grid */}
+      {/* Push Notification Controls Bar & Today's 8 Daily Prayer Times Cards Grid */}
       <div className="space-y-3">
-        <div className="flex items-center justify-between">
+        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-2">
           <h3 className="text-base font-bold text-white flex items-center gap-2">
             <Calendar className="w-4 h-4 text-emerald-400" />
             <span>Jadwal Sholat Hari Ini ({todaySchedule.date})</span>
           </h3>
-          <span className="text-xs text-slate-400 font-mono">Standar Kemenag RI</span>
+          <span className="text-xs text-slate-400 font-mono">
+            Standar Kemenag RI · {enabledPushCount}/8 notifikasi aktif
+          </span>
         </div>
+
+        {/* Web Notification API Permission & Bulk Toggle Strip */}
+        <div className="p-3.5 rounded-xl bg-slate-900 border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2.5 text-xs">
+            {notificationPermission === 'granted' ? (
+              <BellRing className="w-4 h-4 text-emerald-400 shrink-0 mt-0.5 sm:mt-0" />
+            ) : (
+              <Bell className="w-4 h-4 text-amber-400 shrink-0 mt-0.5 sm:mt-0" />
+            )}
+            <div>
+              <span className="font-semibold text-white">
+                Notifikasi Push Adzan (Web Notification API):{' '}
+              </span>
+              <span
+                className={
+                  notificationPermission === 'granted'
+                    ? 'text-emerald-400 font-semibold'
+                    : notificationPermission === 'denied'
+                    ? 'text-red-400 font-semibold'
+                    : 'text-amber-300 font-semibold'
+                }
+              >
+                {notificationPermission === 'granted'
+                  ? 'Diizinkan Browser'
+                  : notificationPermission === 'denied'
+                  ? 'Diblokir Browser'
+                  : notificationPermission === 'unsupported'
+                  ? 'Tidak Didukung Browser'
+                  : 'Menunggu Izin'}
+              </span>
+              <span className="text-slate-400 block sm:inline sm:ml-2">
+                — Klik sakelar lonceng pada tiap kartu sholat untuk mengaktifkan atau mematikan pengingat.
+              </span>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0 text-xs">
+            {notificationPermission !== 'granted' && notificationPermission !== 'unsupported' && (
+              <button
+                type="button"
+                onClick={handleRequestBrowserPermission}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600 hover:bg-emerald-500 text-slate-950 font-bold transition-colors whitespace-nowrap"
+              >
+                Izinkan Notifikasi Browser
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={() => toggleAllFardhuAlarms(true)}
+              className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-700 text-slate-200 font-medium transition-colors whitespace-nowrap"
+            >
+              Aktifkan 5 Sholat Fardhu
+            </button>
+            <button
+              type="button"
+              onClick={() =>
+                setAlarmSettings({
+                  imsak: false,
+                  subuh: false,
+                  terbit: false,
+                  dhuha: false,
+                  dzuhur: false,
+                  ashar: false,
+                  maghrib: false,
+                  isya: false,
+                })
+              }
+              className="px-3 py-1.5 rounded-lg bg-slate-950 hover:bg-slate-800 border border-slate-800 text-slate-400 hover:text-slate-200 font-medium transition-colors whitespace-nowrap"
+            >
+              Nonaktifkan Semua
+            </button>
+          </div>
+        </div>
+
+        {notificationFeedback && (
+          <div
+            className={`p-3 rounded-lg border text-xs flex items-center gap-2 ${
+              notificationFeedback.type === 'success'
+                ? 'bg-emerald-950/50 border-emerald-500/40 text-emerald-300'
+                : notificationFeedback.type === 'warning'
+                ? 'bg-amber-950/50 border-amber-500/40 text-amber-200'
+                : 'bg-slate-900 border-slate-700 text-slate-300'
+            }`}
+          >
+            {notificationFeedback.type === 'success' ? (
+              <CheckCircle2 className="w-4 h-4 text-emerald-400 shrink-0" />
+            ) : (
+              <AlertCircle className="w-4 h-4 text-amber-400 shrink-0" />
+            )}
+            <span>{notificationFeedback.message}</span>
+          </div>
+        )}
 
         <div className="grid grid-cols-2 sm:grid-cols-4 lg:grid-cols-8 gap-3">
           {prayers.map((prayer) => {
@@ -268,7 +653,7 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
             return (
               <div
                 key={prayer.key}
-                className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2 ${
+                className={`p-3.5 rounded-xl border transition-all flex flex-col justify-between space-y-2.5 ${
                   prayer.isNext
                     ? 'bg-emerald-950/70 border-amber-400 shadow-lg shadow-emerald-950/80 ring-1 ring-amber-400/40'
                     : prayer.isPassed
@@ -280,9 +665,17 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
                   <div className="flex items-center justify-between text-[11px] mb-1">
                     <span className="font-arabic text-amber-300 text-sm">{prayer.arabicName}</span>
                     <button
-                      onClick={() => toggleAlarm(prayer.key)}
-                      className={`p-1 rounded hover:bg-slate-800 transition-colors ${isAlarmOn ? 'text-emerald-400' : 'text-slate-600'}`}
-                      title={isAlarmOn ? 'Pengingat Aktif' : 'Nyalakan Pengingat'}
+                      type="button"
+                      role="switch"
+                      aria-checked={isAlarmOn}
+                      aria-label={`Notifikasi push untuk waktu ${prayer.name} (${prayer.time})`}
+                      onClick={() => toggleAlarm(prayer.key, prayer.name, prayer.time)}
+                      className={`p-1.5 rounded-lg border transition-colors ${
+                        isAlarmOn
+                          ? 'bg-emerald-500/20 border-emerald-500/40 text-emerald-400 hover:bg-emerald-500/30'
+                          : 'bg-slate-950 border-slate-800 text-slate-500 hover:text-slate-300'
+                      }`}
+                      title={isAlarmOn ? `Matikan notifikasi ${prayer.name}` : `Aktifkan notifikasi ${prayer.name}`}
                     >
                       {isAlarmOn ? <Bell className="w-3.5 h-3.5" /> : <BellOff className="w-3.5 h-3.5" />}
                     </button>
@@ -297,9 +690,20 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
                   <div className="text-xl sm:text-2xl font-black font-mono tracking-tight text-white tabular-nums">
                     {prayer.time}
                   </div>
-                  <span className="text-[10px] text-slate-500 font-mono block mt-0.5">
-                    {prayer.isNext ? 'Berikutnya' : prayer.isPassed ? 'Telah lewat' : 'Akan datang'}
-                  </span>
+                  <div className="flex items-center justify-between gap-1 mt-1">
+                    <span className="text-[10px] text-slate-500 font-mono">
+                      {prayer.isNext ? 'Berikutnya' : prayer.isPassed ? 'Lewat' : 'Mendatang'}
+                    </span>
+                    <button
+                      type="button"
+                      onClick={() => toggleAlarm(prayer.key, prayer.name, prayer.time)}
+                      className={`text-[10px] font-semibold transition-colors ${
+                        isAlarmOn ? 'text-emerald-400 hover:text-emerald-300' : 'text-slate-500 hover:text-slate-300'
+                      }`}
+                    >
+                      {isAlarmOn ? 'Push ON' : 'Push OFF'}
+                    </button>
+                  </div>
                 </div>
               </div>
             );
