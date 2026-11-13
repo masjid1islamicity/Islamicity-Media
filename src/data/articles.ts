@@ -17,6 +17,32 @@ export interface ArticleItem {
 
 export const ISLAMICITY_ARTICLES: ArticleItem[] = [
   {
+    id: 'hakikat-mafahim-islam',
+    title: 'Hakikat Mafâhîm Islam sebagai Pedoman Perilaku (Ḍawābiṭ)',
+    kicker: 'Fikrah & Pedoman Perilaku Muslim',
+    author: 'Dewan Pakar & Syariah Islamicity Media',
+    date: 'November 2026',
+    readTime: '5 menit baca',
+    excerpt: 'Memahami mafâhîm Islam bukan sekadar tumpukan informasi akademis (ma\'lûmât), melainkan makna mendalam yang memiliki realitas faktual dan berfungsi sebagai pedoman perilaku (ḍawābiṭ) menuju keselamatan akhirat.',
+    quranVerse: {
+      arabic: 'وَمَا أَرْسَلْنَاكَ إِلَّا رَحْمَةً لِّلْعَالَمِينَ',
+      surah: 'QS. Al-Anbiya [21]: 107',
+      translation: 'Dan Kami tidak mengutus engkau (Muhammad), melainkan sebagai rahmat bagi seluruh alam.'
+    },
+    content: [
+      'Pemikiran Islam (mafâhîm) bukanlah sekadar tumpukan pengetahuan teoritis, akademik, atau wawasan ilmiah semata seperti astronomi, kedokteran, atau kimia (ma\'lûmât). Setiap makna yang ditunjukkan oleh mafâhîm Islam memiliki realitas faktual yang dapat ditunjuk—baik fakta terindra seperti hukum dan solusi kemasyarakatan, maupun hal gaib yang diyakini melalui akal dan penginderaan seperti malaikat, surga, dan neraka.',
+      'Fungsi utama mafâhîm Islam adalah sebagai ḍawābiṭ (pedoman dan aturan) untuk mengarahkan perilaku manusia dalam kehidupan dunia menuju keselamatan di akhirat. Oleh karena itu, seorang Muslim wajib memahami dua hal mendasar: pertama, Islam hadir sebagai undang-undang pengatur perilaku (al-nâhiyah al-\'amaliyyah) yang menitikberatkan pengamalan nyata dalam interaksi manusia. Jika Islam hanya dipelajari sebagai materi pengajaran tanpa diamalkan, Islam akan kehilangan daya hidup dan ruh aslinya—sebagaimana pemahaman orientalis yang hanya mencari kepuasan ilmiah.',
+      'Kedua, Al-Qur\'an dan Hadis berkedudukan sebagai Dîn dan Syariat. Ayat-ayat tentang alam semesta—seperti peredaran matahari, lautan, gunung, dan tumbuhan—tidak diturunkan sebagai teori sains, geografi, atau eksperimen kimia, melainkan untuk mengarahkan akal manusia kepada kekuasaan dan keagungan Allah agar hati tunduk beriman kepada-Nya.',
+      'Seluruh nash sumber hukum Islam (baik dari segi manthûq, mafhûm, maupun dalâlah) berpusat pada satu poros utama: Aqidah beserta hukum-hukum syariat dan pemikiran yang terpancar darinya. Mengetahui hukum syariat tanpa merealisasikannya sebagai pedoman hidup sehari-hari adalah musibah yang melemahkan pengaruh Islam; karena itu Islam wajib diposisikan secara kaffah untuk kebahagiaan dunia dan keselamatan akhirat.'
+    ],
+    keyTakeaways: [
+      'Mafâhîm adalah makna faktual yang menjadi pedoman perilaku (ḍawābiṭ), bukan sekadar informasi teoritis.',
+      'Islam adalah undang-undang praktis (al-nâhiyah al-\'amaliyyah), bukan sekadar bahan hafalan akademis.',
+      'Ayat-ayat kauniyah bertujuan membangkitkan kesadaran atas kekuasaan dan keagungan Allah SWT.',
+      'Seluruh nash berporos pada Aqidah dan syariat sebagai petunjuk, rahmat, nasihat, dan solusi hidup.'
+    ]
+  },
+  {
     id: 'konsep-islamicity-modern',
     title: 'Konsep Media Islamicity dalam Perspektif Al-Qur’an, Sunnah, Para Ahli, dan Praktik Global',
     kicker: 'Landasan Teologis & Manajemen Aset',

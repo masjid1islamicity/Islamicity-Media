@@ -2,6 +2,7 @@ export type NavTab =
   | 'tv-radio'
   | 'jadwal-sholat'
   | 'kompas-kiblat'
+  | 'peta-masjid'
   | 'sholawat'
   | 'zakat-qris'
   | 'edukasi'
@@ -152,4 +153,42 @@ export interface QuranMutabaahProfile {
   weeklyTargetVerses: number;
   musyrifName: string;
   halaqahGroup: string;
+}
+
+export interface HijriDateParts {
+  day: number;
+  month: number; // 1-12
+  year: number;
+  monthNameId: string;
+  monthNameAr: string;
+  weekdayId: string;
+  formattedId: string;
+}
+
+export interface IslamicEventItem {
+  id: string;
+  title: string;
+  arabicTitle?: string;
+  category: 'Hari Besar' | 'Puasa Sunnah' | 'Ibadah';
+  hijriDay: number;
+  hijriMonth: number;
+  hijriYear: number;
+  hijriFormatted: string;
+  gregorianDate: Date;
+  gregorianFormatted: string;
+  daysUntil: number;
+  description: string;
+}
+
+export interface DiscoveredMosque {
+  id: string;
+  displayName: string;
+  formattedAddress: string;
+  location: { lat: number; lng: number };
+  rating?: number;
+  userRatingCount?: number;
+  businessStatus?: string;
+  googleMapsURI?: string;
+  isOpenNow?: boolean;
+  distanceMeters: number;
 }

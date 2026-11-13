@@ -1,5 +1,15 @@
-import React, { useState, useEffect } from 'react';
+import React, { useState, useEffect, useMemo } from 'react';
 import jsPDF from 'jspdf';
+import {
+  ResponsiveContainer,
+  BarChart,
+  Bar,
+  XAxis,
+  YAxis,
+  CartesianGrid,
+  Tooltip,
+  Legend,
+} from 'recharts';
 import { 
   Calculator, 
   Coins, 
@@ -15,11 +25,9 @@ import {
   FileSpreadsheet,
   PlusCircle,
   Trash2,
-  Calendar,
-  Layers,
   X,
-  ExternalLink,
-  Search
+  Search,
+  BarChart3
 } from 'lucide-react';
 
 interface ZakatCalculatorSectionProps {
@@ -524,7 +532,124 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
 
   const handleDownloadCsv = handleDownloadReportCsv;
 
+  const [chartGranularity, setChartGranularity] = useState<'monthly' | 'transaction'>('monthly');
+
   const totalCalculatedZakat = ledgerItems.reduce((acc, curr) => acc + curr.zakatDue, 0);
+
+  const chartData = useMemo(() => {
+    const MONTH_MAP: Record<string, number> = {
+      januari: 0, jan: 0,
+      februari: 1, feb: 1,
+      maret: 2, mar: 2,
+      april: 3, apr: 3,
+      mei: 4, may: 4,
+      juni: 5, jun: 5,
+      juli: 6, jul: 6,
+      agustus: 7, agu: 7, agt: 7, aug: 7,
+      september: 8, sep: 8,
+      oktober: 9, okt: 9, oct: 9,
+      november: 10, nov: 10,
+      desember: 11, des: 11, dec: 11,
+    };
+    const SHORT_MONTHS = ['Jan', 'Feb', 'Mar', 'Apr', 'Mei', 'Jun', 'Jul', 'Agu', 'Sep', 'Okt', 'Nov', 'Des'];
+
+    const parseIndonesianDate = (dateStr: string) => {
+      const parts = dateStr.trim().toLowerCase().split(/\s+/);
+      if (parts.length >= 3) {
+        const day = parseInt(parts[0], 10) || 1;
+        const monthIdx = MONTH_MAP[parts[1]] ?? 0;
+        const year = parseInt(parts[2], 10) || new Date().getFullYear();
+        return {
+          day,
+          monthIdx,
+          year,
+          monthKey: `${year}-${String(monthIdx + 1).padStart(2, '0')}`,
+          monthLabel: `${SHORT_MONTHS[monthIdx]} ${year}`,
+          shortDate: `${day} ${SHORT_MONTHS[monthIdx]}`,
+          sortTs: new Date(year, monthIdx, day).getTime(),
+        };
+      }
+      const fallback = new Date();
+      return {
+        day: fallback.getDate(),
+        monthIdx: fallback.getMonth(),
+        year: fallback.getFullYear(),
+        monthKey: `${fallback.getFullYear()}-${String(fallback.getMonth() + 1).padStart(2, '0')}`,
+        monthLabel: `${SHORT_MONTHS[fallback.getMonth()]} ${fallback.getFullYear()}`,
+        shortDate: dateStr.slice(0, 10),
+        sortTs: fallback.getTime(),
+      };
+    };
+
+    if (chartGranularity === 'transaction') {
+      return [...ledgerItems]
+        .map((item, idx) => {
+          const parsed = parseIndonesianDate(item.date);
+          const isPaid = item.status.includes('Lunas');
+          return {
+            key: item.id,
+            label: `${parsed.shortDate} (${item.id.slice(-4)})`,
+            fullPeriod: `${item.date} · ${item.type}`,
+            disalurkan: isPaid ? item.zakatDue : 0,
+            terjadwal: isPaid ? 0 : item.zakatDue,
+            total: item.zakatDue,
+            count: 1,
+            sortTs: parsed.sortTs - idx * 0.001,
+          };
+        })
+        .sort((a, b) => a.sortTs - b.sortTs);
+    }
+
+    const monthlyMap = new Map<
+      string,
+      {
+        key: string;
+        label: string;
+        fullPeriod: string;
+        disalurkan: number;
+        terjadwal: number;
+        total: number;
+        count: number;
+        sortTs: number;
+      }
+    >();
+
+    for (const item of ledgerItems) {
+      const parsed = parseIndonesianDate(item.date);
+      const isPaid = item.status.includes('Lunas');
+      const existing = monthlyMap.get(parsed.monthKey);
+      if (existing) {
+        existing.disalurkan += isPaid ? item.zakatDue : 0;
+        existing.terjadwal += isPaid ? 0 : item.zakatDue;
+        existing.total += item.zakatDue;
+        existing.count += 1;
+      } else {
+        monthlyMap.set(parsed.monthKey, {
+          key: parsed.monthKey,
+          label: parsed.monthLabel,
+          fullPeriod: parsed.monthLabel,
+          disalurkan: isPaid ? item.zakatDue : 0,
+          terjadwal: isPaid ? 0 : item.zakatDue,
+          total: item.zakatDue,
+          count: 1,
+          sortTs: new Date(parsed.year, parsed.monthIdx, 1).getTime(),
+        });
+      }
+    }
+
+    return Array.from(monthlyMap.values()).sort((a, b) => a.sortTs - b.sortTs);
+  }, [ledgerItems, chartGranularity]);
+
+  const formatCompactRupiah = (value: number) => {
+    if (value >= 1_000_000) {
+      const jt = value / 1_000_000;
+      return `Rp ${Number.isInteger(jt) ? jt : jt.toFixed(1).replace('.', ',')}jt`;
+    }
+    if (value >= 1_000) {
+      return `Rp ${Math.round(value / 1_000)}rb`;
+    }
+    return `Rp ${value}`;
+  };
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
@@ -953,6 +1078,139 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
               <span>8 Asnaf & Diawasi Dewan Syariah</span>
             </span>
           </div>
+        </div>
+
+        {/* Zakat Contribution History Bar Chart (Recharts) */}
+        <div className="p-4 sm:p-5 rounded-xl bg-slate-950 border border-slate-800 space-y-4">
+          <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div>
+              <h4 className="text-sm font-bold text-white flex items-center gap-2">
+                <BarChart3 className="w-4 h-4 text-emerald-400 shrink-0" />
+                <span>Grafik Kontribusi Zakat dari Waktu ke Waktu</span>
+              </h4>
+              <p className="text-[11px] text-slate-400 mt-0.5">
+                Memantau konsistensi penunaian dan perencanaan zakat Anda secara berkala.
+              </p>
+            </div>
+
+            <div className="flex items-center gap-1 p-1 rounded-lg bg-slate-900 border border-slate-800 self-start sm:self-auto">
+              <button
+                type="button"
+                onClick={() => setChartGranularity('monthly')}
+                className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                  chartGranularity === 'monthly'
+                    ? 'bg-emerald-600 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Per Bulan
+              </button>
+              <button
+                type="button"
+                onClick={() => setChartGranularity('transaction')}
+                className={`px-3 py-1 rounded-md text-[11px] font-semibold transition-colors whitespace-nowrap ${
+                  chartGranularity === 'transaction'
+                    ? 'bg-emerald-600 text-slate-950'
+                    : 'text-slate-400 hover:text-white'
+                }`}
+              >
+                Per Transaksi
+              </button>
+            </div>
+          </div>
+
+          {chartData.length === 0 ? (
+            <div className="h-56 flex items-center justify-center text-xs text-slate-500 border border-dashed border-slate-800 rounded-lg">
+              Belum ada data transaksi zakat untuk ditampilkan pada grafik.
+            </div>
+          ) : (
+            <div className="w-full h-64">
+              <ResponsiveContainer width="100%" height="100%">
+                <BarChart
+                  data={chartData}
+                  margin={{ top: 10, right: 12, left: 4, bottom: 4 }}
+                >
+                  <CartesianGrid strokeDasharray="3 3" stroke="#1e293b" vertical={false} />
+                  <XAxis
+                    dataKey="label"
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={{ stroke: '#334155' }}
+                  />
+                  <YAxis
+                    stroke="#94a3b8"
+                    fontSize={11}
+                    tickLine={false}
+                    axisLine={false}
+                    tickFormatter={formatCompactRupiah}
+                    width={64}
+                  />
+                  <Tooltip
+                    cursor={{ fill: 'rgba(16, 185, 129, 0.08)' }}
+                    content={({ active, payload }) => {
+                      if (!active || !payload || payload.length === 0) return null;
+                      const entry = payload[0]?.payload as {
+                        fullPeriod: string;
+                        disalurkan: number;
+                        terjadwal: number;
+                        total: number;
+                        count: number;
+                      };
+                      return (
+                        <div className="p-3 rounded-lg bg-slate-900 border border-slate-700 shadow-xl text-xs space-y-1.5 min-w-[200px]">
+                          <div className="font-bold text-white border-b border-slate-800 pb-1">
+                            {entry.fullPeriod}
+                          </div>
+                          {entry.disalurkan > 0 && (
+                            <div className="flex items-center justify-between gap-3 tabular-nums">
+                              <span className="text-emerald-400">Lunas &amp; Disalurkan:</span>
+                              <span className="font-mono font-bold text-emerald-300">
+                                {formatCurrency(entry.disalurkan)}
+                              </span>
+                            </div>
+                          )}
+                          {entry.terjadwal > 0 && (
+                            <div className="flex items-center justify-between gap-3 tabular-nums">
+                              <span className="text-amber-400">Dihitung / Terjadwal:</span>
+                              <span className="font-mono font-bold text-amber-300">
+                                {formatCurrency(entry.terjadwal)}
+                              </span>
+                            </div>
+                          )}
+                          <div className="flex items-center justify-between gap-3 pt-1 border-t border-slate-800 tabular-nums">
+                            <span className="text-slate-400">Total ({entry.count} catatan):</span>
+                            <span className="font-mono font-bold text-white">
+                              {formatCurrency(entry.total)}
+                            </span>
+                          </div>
+                        </div>
+                      );
+                    }}
+                  />
+                  <Legend
+                    wrapperStyle={{ fontSize: '11px', paddingTop: '8px' }}
+                  />
+                  <Bar
+                    dataKey="disalurkan"
+                    name="Lunas & Disalurkan"
+                    stackId="zakat"
+                    fill="#10b981"
+                    radius={[0, 0, 0, 0]}
+                    maxBarSize={48}
+                  />
+                  <Bar
+                    dataKey="terjadwal"
+                    name="Dihitung / Terjadwal"
+                    stackId="zakat"
+                    fill="#f59e0b"
+                    radius={[4, 4, 0, 0]}
+                    maxBarSize={48}
+                  />
+                </BarChart>
+              </ResponsiveContainer>
+            </div>
+          )}
         </div>
 
         {/* Search & Filter Bar with Download Report Button */}

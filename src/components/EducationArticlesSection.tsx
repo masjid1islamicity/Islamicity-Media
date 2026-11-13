@@ -1,5 +1,6 @@
 import React, { useState } from 'react';
 import { ISLAMICITY_ARTICLES, ArticleItem } from '../data/articles';
+import { MafahimIslamModule } from './MafahimIslamModule';
 import { 
   BookOpen, 
   Scale, 
@@ -7,14 +8,13 @@ import {
   CheckCircle, 
   Coins, 
   Sparkles, 
-  Share2, 
-  ChevronRight,
   Lightbulb,
   TrendingUp,
-  FileText
+  Compass,
 } from 'lucide-react';
 
 export const EducationArticlesSection: React.FC = () => {
+  const [activeView, setActiveView] = useState<'mafahim' | 'pilar-kajian'>('mafahim');
   const [articles] = useState<ArticleItem[]>(ISLAMICITY_ARTICLES);
   const [selectedArticle, setSelectedArticle] = useState<ArticleItem>(ISLAMICITY_ARTICLES[0]);
 
@@ -47,17 +47,50 @@ export const EducationArticlesSection: React.FC = () => {
 
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
-      {/* Header */}
-      <div>
-        <h2 className="text-2xl font-bold text-white flex items-center gap-2">
-          <BookOpen className="w-6 h-6 text-emerald-400" />
-          <span>Konsep Islamicity: Al-Qur'an, Sunnah & Praktik Global</span>
-        </h2>
-        <p className="text-sm text-slate-400 mt-1">
-          Wadah induk landasan spiritual dan moral dalam pengelolaan aset manajemen, collateral, dan tatanan peradaban Allah SWT.
-        </p>
+      {/* Header + Sub-view Switcher */}
+      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+        <div>
+          <h2 className="text-2xl font-bold text-white flex items-center gap-2">
+            <BookOpen className="w-6 h-6 text-emerald-400" />
+            <span>Edukasi &amp; Fikrah Islamicity: Al-Qur'an, Sunnah &amp; Mafâhîm</span>
+          </h2>
+          <p className="text-sm text-slate-400 mt-1">
+            Wadah induk landasan spiritual, pedoman perilaku (<span className="italic">ḍawābiṭ</span>), pengelolaan aset manajemen, dan tatanan peradaban Allah SWT.
+          </p>
+        </div>
+
+        <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveView('mafahim')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              activeView === 'mafahim'
+                ? 'bg-emerald-600 text-slate-950'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <Compass className="w-3.5 h-3.5" />
+            <span>Hakikat Mafâhîm Islam</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('pilar-kajian')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              activeView === 'pilar-kajian'
+                ? 'bg-emerald-600 text-slate-950'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <Sparkles className="w-3.5 h-3.5" />
+            <span>Pilar &amp; Kajian Islamicity</span>
+          </button>
+        </div>
       </div>
 
+      {activeView === 'mafahim' ? (
+        <MafahimIslamModule />
+      ) : (
+        <>
       {/* 4 Pilar Utama Islamicity Visual Cards */}
       <div className="grid grid-cols-1 sm:grid-cols-2 lg:grid-cols-4 gap-4">
         <div className="p-5 rounded-xl bg-slate-900 border border-slate-800 hover:border-emerald-500/50 transition-colors">
@@ -214,6 +247,8 @@ export const EducationArticlesSection: React.FC = () => {
           </div>
         </div>
       </div>
+        </>
+      )}
     </div>
   );
 };

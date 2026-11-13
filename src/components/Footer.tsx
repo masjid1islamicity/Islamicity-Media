@@ -85,6 +85,11 @@ export const Footer: React.FC<FooterProps> = ({ onSelectTab }) => {
                 </button>
               </li>
               <li>
+                <button onClick={() => onSelectTab('peta-masjid')} className="hover:text-emerald-400 transition-colors">
+                  Peta Masjid Terdekat &amp; Jejaring Islamicity
+                </button>
+              </li>
+              <li>
                 <button onClick={() => onSelectTab('zakat-qris')} className="hover:text-emerald-400 transition-colors">
                   Kalkulator Zakat & Pembayaran QRIS
                 </button>
