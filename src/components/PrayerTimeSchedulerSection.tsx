@@ -15,7 +15,9 @@ import {
   AlertCircle,
   Globe,
   BookOpen,
-  Send
+  Send,
+  RotateCcw,
+  Users
 } from 'lucide-react';
 import { 
   calculatePrayerTimes, 
@@ -119,15 +121,76 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
     return () => window.removeEventListener('focus', syncPermission);
   }, []);
 
-  // Daily prayer completion tracker (persisted locally)
-  const [completedPrayers, setCompletedPrayers] = useState<{ [key: string]: boolean }>(() => {
-    const saved = localStorage.getItem('islamicity_prayer_tracker_today');
-    return saved ? JSON.parse(saved) : { subuh: true, dzuhur: false, ashar: false, maghrib: false, isya: false };
+  // Date-aware 5 daily prayer spiritual checklist (persisted per YYYY-MM-DD in localStorage)
+  const PRAYER_TRACKER_HISTORY_KEY = 'islamicity_prayer_tracker_history';
+  const FARDHU_KEYS = ['subuh', 'dzuhur', 'ashar', 'maghrib', 'isya'] as const;
+
+  const getLocalDateKey = (d: Date = new Date()): string => {
+    const y = d.getFullYear();
+    const m = String(d.getMonth() + 1).padStart(2, '0');
+    const day = String(d.getDate()).padStart(2, '0');
+    return `${y}-${m}-${day}`;
+  };
+
+  interface PrayerCheckEntry {
+    completed: boolean;
+    jamaah?: boolean;
+    completedAt?: string;
+  }
+
+  type DailyPrayerRecord = Record<string, PrayerCheckEntry>;
+  type PrayerHistoryMap = Record<string, DailyPrayerRecord>;
+
+  const createEmptyDayRecord = (): DailyPrayerRecord => ({
+    subuh: { completed: false },
+    dzuhur: { completed: false },
+    ashar: { completed: false },
+    maghrib: { completed: false },
+    isya: { completed: false },
+  });
+
+  const [prayerHistory, setPrayerHistory] = useState<PrayerHistoryMap>(() => {
+    const todayKey = getLocalDateKey();
+    try {
+      const savedHistory = localStorage.getItem(PRAYER_TRACKER_HISTORY_KEY);
+      if (savedHistory) {
+        const parsed = JSON.parse(savedHistory) as PrayerHistoryMap;
+        if (parsed && typeof parsed === 'object') {
+          return {
+            ...parsed,
+            [todayKey]: { ...createEmptyDayRecord(), ...(parsed[todayKey] || {}) },
+          };
+        }
+      }
+      // Migrate legacy key if present
+      const legacy = localStorage.getItem('islamicity_prayer_tracker_today');
+      if (legacy) {
+        const parsedLegacy = JSON.parse(legacy) as Record<string, boolean>;
+        const migrated = createEmptyDayRecord();
+        for (const k of FARDHU_KEYS) {
+          if (parsedLegacy[k]) migrated[k] = { completed: true };
+        }
+        return { [todayKey]: migrated };
+      }
+    } catch {
+      // ignore storage errors
+    }
+    return { [todayKey]: createEmptyDayRecord() };
   });
 
   useEffect(() => {
-    localStorage.setItem('islamicity_prayer_tracker_today', JSON.stringify(completedPrayers));
-  }, [completedPrayers]);
+    try {
+      localStorage.setItem(PRAYER_TRACKER_HISTORY_KEY, JSON.stringify(prayerHistory));
+    } catch {
+      // ignore storage errors
+    }
+  }, [prayerHistory]);
+
+  const todayTrackerKey = getLocalDateKey(currentTime);
+  const todayChecklist: DailyPrayerRecord = {
+    ...createEmptyDayRecord(),
+    ...(prayerHistory[todayTrackerKey] || {}),
+  };
 
   // Update clock every second
   useEffect(() => {
@@ -404,11 +467,94 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
   };
 
   const togglePrayerCompletion = (key: string) => {
-    setCompletedPrayers(prev => ({
+    const nowTime = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setPrayerHistory((prev) => {
+      const dayRecord = { ...createEmptyDayRecord(), ...(prev[todayTrackerKey] || {}) };
+      const current = dayRecord[key] || { completed: false };
+      const nextCompleted = !current.completed;
+      return {
+        ...prev,
+        [todayTrackerKey]: {
+          ...dayRecord,
+          [key]: {
+            completed: nextCompleted,
+            jamaah: nextCompleted ? current.jamaah ?? false : false,
+            completedAt: nextCompleted ? nowTime : undefined,
+          },
+        },
+      };
+    });
+  };
+
+  const togglePrayerJamaah = (key: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setPrayerHistory((prev) => {
+      const dayRecord = { ...createEmptyDayRecord(), ...(prev[todayTrackerKey] || {}) };
+      const current = dayRecord[key] || { completed: false };
+      if (!current.completed) return prev;
+      return {
+        ...prev,
+        [todayTrackerKey]: {
+          ...dayRecord,
+          [key]: {
+            ...current,
+            jamaah: !current.jamaah,
+          },
+        },
+      };
+    });
+  };
+
+  const handleResetTodayChecklist = () => {
+    setPrayerHistory((prev) => ({
       ...prev,
-      [key]: !prev[key]
+      [todayTrackerKey]: createEmptyDayRecord(),
     }));
   };
+
+  const handleCompleteAllToday = () => {
+    const nowTime = new Date().toLocaleTimeString('id-ID', {
+      hour: '2-digit',
+      minute: '2-digit',
+    });
+    setPrayerHistory((prev) => {
+      const dayRecord = { ...createEmptyDayRecord(), ...(prev[todayTrackerKey] || {}) };
+      const updated: DailyPrayerRecord = { ...dayRecord };
+      for (const k of FARDHU_KEYS) {
+        if (!updated[k]?.completed) {
+          updated[k] = { completed: true, jamaah: false, completedAt: nowTime };
+        }
+      }
+      return {
+        ...prev,
+        [todayTrackerKey]: updated,
+      };
+    });
+  };
+
+  const completedCountToday = FARDHU_KEYS.filter(
+    (k) => todayChecklist[k]?.completed
+  ).length;
+  const checklistPercentToday = Math.round((completedCountToday / 5) * 100);
+
+  const last7DaysSummary = Array.from({ length: 7 }, (_, idx) => {
+    const d = new Date(currentTime);
+    d.setDate(d.getDate() - (6 - idx));
+    const key = getLocalDateKey(d);
+    const rec = prayerHistory[key];
+    const count = rec
+      ? FARDHU_KEYS.filter((k) => rec[k]?.completed).length
+      : 0;
+    return {
+      key,
+      dayShort: d.toLocaleDateString('id-ID', { weekday: 'short' }),
+      count,
+      isToday: idx === 6,
+    };
+  });
 
   // Play audio test for adhan
   const handlePlayAdhanSound = () => {
@@ -718,57 +864,160 @@ export const PrayerTimeSchedulerSection: React.FC = () => {
           <div className="flex items-center justify-between pb-3 border-b border-slate-800">
             <h4 className="text-sm font-bold text-white flex items-center gap-2">
               <CheckCircle2 className="w-4 h-4 text-emerald-400" />
-              <span>Mutaba'ah Sholat Fardhu Hari Ini</span>
+              <span>Checklist Sholat 5 Waktu Hari Ini</span>
             </h4>
-            <span className="text-[11px] text-emerald-400 font-mono">
-              {Object.values(completedPrayers).filter(Boolean).length}/5 Selesai
-            </span>
+            <div className="flex items-center gap-2">
+              <span className="text-xs font-bold text-emerald-400 font-mono tabular-nums">
+                {completedCountToday}/5 ({checklistPercentToday}%)
+              </span>
+              {completedCountToday > 0 && (
+                <button
+                  type="button"
+                  onClick={handleResetTodayChecklist}
+                  className="p-1 rounded text-slate-400 hover:text-white hover:bg-slate-800 transition-colors"
+                  title="Reset checklist sholat hari ini"
+                  aria-label="Reset checklist sholat hari ini"
+                >
+                  <RotateCcw className="w-3.5 h-3.5" />
+                </button>
+              )}
+            </div>
           </div>
 
-          <p className="text-xs text-slate-400 leading-relaxed">
-            Centang sholat fardhu yang telah Anda tunaikan secara berjamaah untuk menjaga kedisiplinan ibadah harian.
-          </p>
+          {/* Daily Completion Progress Bar */}
+          <div className="space-y-1.5">
+            <div className="w-full h-2 rounded-full bg-slate-950 border border-slate-800 overflow-hidden">
+              <div
+                className="h-full bg-gradient-to-r from-emerald-500 to-amber-400 transition-all duration-300"
+                style={{ width: `${checklistPercentToday}%` }}
+              />
+            </div>
+            <p className="text-xs text-slate-400 leading-relaxed">
+              {completedCountToday === 5
+                ? 'Alhamdulillah! Seluruh 5 sholat fardhu hari ini telah tertunaikan. Semoga istiqomah.'
+                : 'Tandai setiap sholat fardhu yang telah Anda tunaikan untuk menjaga mutaba\'ah ibadah harian.'}
+            </p>
+          </div>
 
           <div className="space-y-2">
             {[
-              { key: 'subuh', name: 'Subuh (2 Rakaat)', time: todaySchedule.subuh },
-              { key: 'dzuhur', name: 'Dzuhur (4 Rakaat)', time: todaySchedule.dzuhur },
-              { key: 'ashar', name: 'Ashar (4 Rakaat)', time: todaySchedule.ashar },
-              { key: 'maghrib', name: 'Maghrib (3 Rakaat)', time: todaySchedule.maghrib },
-              { key: 'isya', name: 'Isya (4 Rakaat)', time: todaySchedule.isya }
+              { key: 'subuh', name: 'Subuh', rakaat: '2 Rakaat', arabic: 'الفجر', time: todaySchedule.subuh },
+              { key: 'dzuhur', name: 'Dzuhur', rakaat: '4 Rakaat', arabic: 'الظهر', time: todaySchedule.dzuhur },
+              { key: 'ashar', name: 'Ashar', rakaat: '4 Rakaat', arabic: 'العصر', time: todaySchedule.ashar },
+              { key: 'maghrib', name: 'Maghrib', rakaat: '3 Rakaat', arabic: 'المغرب', time: todaySchedule.maghrib },
+              { key: 'isya', name: 'Isya', rakaat: '4 Rakaat', arabic: 'العشاء', time: todaySchedule.isya }
             ].map((fardhu) => {
-              const isChecked = completedPrayers[fardhu.key] ?? false;
+              const entry = todayChecklist[fardhu.key] || { completed: false };
+              const isChecked = entry.completed;
+              const isJamaah = Boolean(entry.jamaah);
               return (
                 <div
                   key={fardhu.key}
-                  onClick={() => togglePrayerCompletion(fardhu.key)}
-                  className={`p-3 rounded-xl border cursor-pointer transition-all flex items-center justify-between text-xs ${
+                  className={`p-3 rounded-xl border transition-all flex items-center justify-between gap-2 text-xs ${
                     isChecked
                       ? 'bg-emerald-950/40 border-emerald-500/50 text-slate-200'
                       : 'bg-slate-950/60 border-slate-800/80 text-slate-400 hover:bg-slate-900'
                   }`}
                 >
-                  <div className="flex items-center gap-3">
-                    <div className={`w-5 h-5 rounded flex items-center justify-center transition-colors ${
-                      isChecked ? 'bg-emerald-500 text-slate-950' : 'border border-slate-700 bg-slate-900'
-                    }`}>
+                  <button
+                    type="button"
+                    role="checkbox"
+                    aria-checked={isChecked}
+                    aria-label={`Tandai sholat ${fardhu.name} selesai`}
+                    onClick={() => togglePrayerCompletion(fardhu.key)}
+                    className="flex items-center gap-3 text-left flex-1 min-w-0 focus:outline-none"
+                  >
+                    <div
+                      className={`w-5 h-5 rounded flex items-center justify-center shrink-0 transition-colors ${
+                        isChecked
+                          ? 'bg-emerald-500 text-slate-950'
+                          : 'border border-slate-700 bg-slate-900'
+                      }`}
+                    >
                       {isChecked && <Check className="w-3.5 h-3.5 stroke-[3]" />}
                     </div>
-                    <div>
-                      <strong className={`block ${isChecked ? 'text-white' : 'text-slate-300'}`}>
-                        {fardhu.name}
-                      </strong>
-                      <span className="text-[11px] font-mono text-slate-400">{fardhu.time} WIB</span>
+                    <div className="min-w-0">
+                      <div className="flex items-center gap-2">
+                        <strong className={isChecked ? 'text-white' : 'text-slate-300'}>
+                          {fardhu.name} ({fardhu.rakaat})
+                        </strong>
+                        <span className="font-arabic text-amber-300/90 text-xs">{fardhu.arabic}</span>
+                      </div>
+                      <span className="text-[11px] font-mono text-slate-400 tabular-nums">
+                        {fardhu.time} WIB
+                        {isChecked && entry.completedAt ? ` · Ditandai ${entry.completedAt}` : ''}
+                      </span>
                     </div>
+                  </button>
+
+                  <div className="flex items-center gap-1.5 shrink-0">
+                    {isChecked && (
+                      <button
+                        type="button"
+                        onClick={(e) => togglePrayerJamaah(fardhu.key, e)}
+                        title="Tandai pelaksanaan berjamaah"
+                        className={`px-2 py-0.5 rounded text-[10px] font-semibold flex items-center gap-1 border transition-colors ${
+                          isJamaah
+                            ? 'bg-amber-500/20 border-amber-400/50 text-amber-300'
+                            : 'bg-slate-900 border-slate-700 text-slate-400 hover:text-slate-200'
+                        }`}
+                      >
+                        <Users className="w-3 h-3" />
+                        <span>{isJamaah ? 'Berjamaah' : 'Munfarid'}</span>
+                      </button>
+                    )}
+                    <button
+                      type="button"
+                      onClick={() => togglePrayerCompletion(fardhu.key)}
+                      className={`text-[10px] font-semibold px-2 py-0.5 rounded transition-colors ${
+                        isChecked ? 'bg-emerald-900/60 text-emerald-300' : 'bg-slate-800 text-slate-400 hover:text-white'
+                      }`}
+                    >
+                      {isChecked ? 'Selesai' : 'Belum'}
+                    </button>
                   </div>
-                  <span className={`text-[10px] font-semibold px-2 py-0.5 rounded ${
-                    isChecked ? 'bg-emerald-900/60 text-emerald-300' : 'bg-slate-800 text-slate-500'
-                  }`}>
-                    {isChecked ? 'Alhamdulillah' : 'Belum'}
-                  </span>
                 </div>
               );
             })}
+          </div>
+
+          {/* 7-Day Spiritual Consistency Strip + Quick Complete */}
+          <div className="pt-3 border-t border-slate-800 flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+            <div className="space-y-1">
+              <span className="text-[10px] uppercase tracking-wider text-slate-400 font-semibold block">
+                Konsistensi 7 Hari Terakhir
+              </span>
+              <div className="flex items-center gap-1.5">
+                {last7DaysSummary.map((d) => (
+                  <div
+                    key={d.key}
+                    title={`${d.dayShort}: ${d.count}/5 sholat`}
+                    className={`w-7 py-1 rounded text-center border text-[10px] font-mono tabular-nums ${
+                      d.count === 5
+                        ? 'bg-emerald-600/30 border-emerald-500/60 text-emerald-300 font-bold'
+                        : d.count > 0
+                        ? 'bg-amber-950/50 border-amber-600/40 text-amber-300'
+                        : d.isToday
+                        ? 'bg-slate-950 border-slate-600 text-slate-300'
+                        : 'bg-slate-950 border-slate-800 text-slate-500'
+                    }`}
+                  >
+                    <div className="text-[9px] leading-none opacity-80">{d.dayShort.slice(0, 2)}</div>
+                    <div className="mt-0.5 leading-none">{d.count}</div>
+                  </div>
+                ))}
+              </div>
+            </div>
+
+            {completedCountToday < 5 && (
+              <button
+                type="button"
+                onClick={handleCompleteAllToday}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold transition-colors whitespace-nowrap self-start sm:self-end"
+              >
+                Tandai 5/5 Selesai
+              </button>
+            )}
           </div>
         </div>
 

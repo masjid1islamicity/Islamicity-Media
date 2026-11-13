@@ -16,6 +16,13 @@ import { MosqueMapSection } from './components/MosqueMapSection';
 import { NotificationModal } from './components/NotificationModal';
 import { InAppToast, ToastMessage } from './components/InAppToast';
 import { Footer } from './components/Footer';
+import {
+  loadMonthlyZakatReminder,
+  saveMonthlyZakatReminder,
+  isMonthlyZakatReminderDue,
+  dispatchMonthlyZakatReminderNotification,
+  getMonthKey,
+} from './services/notificationService';
 
 export default function App() {
   const [activeTab, setActiveTab] = useState<NavTab>('tv-radio');
@@ -30,6 +37,31 @@ export default function App() {
     const handleQuotaExceeded = () => setMapsQuotaExceeded(true);
     window.addEventListener('gmp-quota-exceeded', handleQuotaExceeded);
     return () => window.removeEventListener('gmp-quota-exceeded', handleQuotaExceeded);
+  }, []);
+
+  // Background check for Monthly Zakat Assessment Reminder across the app
+  useEffect(() => {
+    const checkZakatDue = () => {
+      const config = loadMonthlyZakatReminder();
+      const now = new Date();
+      if (isMonthlyZakatReminderDue(config, now)) {
+        const { title, body } = dispatchMonthlyZakatReminderNotification(config, false);
+        saveMonthlyZakatReminder({
+          ...config,
+          lastNotifiedMonthKey: getMonthKey(now),
+        });
+        setActiveToast({
+          id: Date.now().toString(),
+          title,
+          message: body,
+          type: 'info',
+        });
+      }
+    };
+
+    checkZakatDue();
+    const timer = window.setInterval(checkZakatDue, 60_000);
+    return () => window.clearInterval(timer);
   }, []);
 
   // Persistent Sholawat Count

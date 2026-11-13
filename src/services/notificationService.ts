@@ -191,3 +191,117 @@ export function saveNotificationPreferences(prefs: NotificationPreferences): voi
     localStorage.setItem('islamicity_notification_prefs', JSON.stringify(prefs));
   } catch (_) {}
 }
+
+// ============================================================================
+// Monthly Zakat Assessment Reminder Helpers
+// ============================================================================
+export interface MonthlyZakatReminderConfig {
+  enabled: boolean;
+  dayOfMonth: number; // 1..28
+  timeStr: string; // "HH:mm"
+  zakatFocus: 'penghasilan' | 'maal' | 'semua';
+  lastNotifiedMonthKey: string | null; // "YYYY-MM"
+  lastAssessedMonthKey: string | null; // "YYYY-MM"
+}
+
+const MONTHLY_ZAKAT_REMINDER_KEY = 'islamicity_zakat_monthly_reminder';
+
+export const DEFAULT_MONTHLY_ZAKAT_REMINDER: MonthlyZakatReminderConfig = {
+  enabled: false,
+  dayOfMonth: 25,
+  timeStr: '09:00',
+  zakatFocus: 'penghasilan',
+  lastNotifiedMonthKey: null,
+  lastAssessedMonthKey: null,
+};
+
+export function getMonthKey(date: Date = new Date()): string {
+  const y = date.getFullYear();
+  const m = String(date.getMonth() + 1).padStart(2, '0');
+  return `${y}-${m}`;
+}
+
+export function loadMonthlyZakatReminder(): MonthlyZakatReminderConfig {
+  try {
+    const raw = localStorage.getItem(MONTHLY_ZAKAT_REMINDER_KEY);
+    if (raw) {
+      const parsed = JSON.parse(raw) as Partial<MonthlyZakatReminderConfig>;
+      return {
+        ...DEFAULT_MONTHLY_ZAKAT_REMINDER,
+        ...parsed,
+        dayOfMonth: Math.min(28, Math.max(1, Number(parsed.dayOfMonth) || 25)),
+      };
+    }
+  } catch (_) {}
+  return DEFAULT_MONTHLY_ZAKAT_REMINDER;
+}
+
+export function saveMonthlyZakatReminder(config: MonthlyZakatReminderConfig): void {
+  try {
+    localStorage.setItem(MONTHLY_ZAKAT_REMINDER_KEY, JSON.stringify(config));
+  } catch (_) {}
+}
+
+export function getNextMonthlyZakatReminderDate(
+  config: MonthlyZakatReminderConfig,
+  now: Date = new Date()
+): Date {
+  const [hhRaw, mmRaw] = (config.timeStr || '09:00').split(':').map(Number);
+  const hh = Number.isFinite(hhRaw) ? hhRaw : 9;
+  const mm = Number.isFinite(mmRaw) ? mmRaw : 0;
+  const safeDay = Math.min(28, Math.max(1, config.dayOfMonth || 25));
+
+  const thisMonthCandidate = new Date(now.getFullYear(), now.getMonth(), safeDay, hh, mm, 0, 0);
+  if (thisMonthCandidate.getTime() > now.getTime()) {
+    return thisMonthCandidate;
+  }
+  return new Date(now.getFullYear(), now.getMonth() + 1, safeDay, hh, mm, 0, 0);
+}
+
+export function isMonthlyZakatReminderDue(
+  config: MonthlyZakatReminderConfig,
+  now: Date = new Date()
+): boolean {
+  if (!config.enabled) return false;
+  const currentMonthKey = getMonthKey(now);
+  if (config.lastNotifiedMonthKey === currentMonthKey) return false;
+  if (config.lastAssessedMonthKey === currentMonthKey) return false;
+
+  const [hhRaw, mmRaw] = (config.timeStr || '09:00').split(':').map(Number);
+  const hh = Number.isFinite(hhRaw) ? hhRaw : 9;
+  const mm = Number.isFinite(mmRaw) ? mmRaw : 0;
+  const safeDay = Math.min(28, Math.max(1, config.dayOfMonth || 25));
+
+  const dueThisMonth = new Date(now.getFullYear(), now.getMonth(), safeDay, hh, mm, 0, 0);
+  return now.getTime() >= dueThisMonth.getTime();
+}
+
+export function getZakatFocusLabel(focus: MonthlyZakatReminderConfig['zakatFocus']): string {
+  if (focus === 'maal') return 'Zakat Maal & Tabungan';
+  if (focus === 'semua') return 'Seluruh Kewajiban Zakat';
+  return 'Zakat Penghasilan Bulanan';
+}
+
+export function dispatchMonthlyZakatReminderNotification(
+  config: MonthlyZakatReminderConfig,
+  isTest: boolean = false
+): { sentNative: boolean; title: string; body: string } {
+  const focusLabel = getZakatFocusLabel(config.zakatFocus);
+  const title = isTest
+    ? `Uji Pengingat Zakat Bulanan (${focusLabel})`
+    : `Waktunya Evaluasi ${focusLabel}`;
+  const body = isTest
+    ? `Simulasi pengingat rutin setiap tanggal ${config.dayOfMonth} pukul ${config.timeStr}. Hitung & tunaikan zakat Anda secara transparan.`
+    : `Pengingat bulanan tanggal ${config.dayOfMonth}: mari evaluasi harta & penghasilan Anda di Kalkulator Zakat Islamicity.`;
+
+  const prefs = loadNotificationPreferences();
+  const sentNative = sendWebNotification(title, {
+    body,
+    tag: isTest ? 'islamicity-zakat-monthly-test' : `islamicity-zakat-monthly-${getMonthKey()}`,
+    requireInteraction: !isTest,
+    playSound: prefs.soundEnabled,
+  });
+
+  return { sentNative, title, body };
+}
+

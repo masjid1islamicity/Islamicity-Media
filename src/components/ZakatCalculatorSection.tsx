@@ -27,8 +27,24 @@ import {
   Trash2,
   X,
   Search,
-  BarChart3
+  BarChart3,
+  Bell,
+  BellRing,
+  BellOff,
+  Calendar,
+  Send
 } from 'lucide-react';
+import {
+  MonthlyZakatReminderConfig,
+  loadMonthlyZakatReminder,
+  saveMonthlyZakatReminder,
+  getMonthKey,
+  getNextMonthlyZakatReminderDate,
+  isMonthlyZakatReminderDue,
+  dispatchMonthlyZakatReminderNotification,
+  getNotificationPermissionStatus,
+  requestNotificationPermission,
+} from '../services/notificationService';
 
 interface ZakatCalculatorSectionProps {
   onPayZakat: (amount: number, typeLabel: string) => void;
@@ -138,6 +154,143 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
       console.warn('Error saving zakat ledger to localStorage:', e);
     }
   }, [ledgerItems]);
+
+  // Monthly Zakat Assessment Reminder state & Web Notification scheduler
+  const [monthlyReminder, setMonthlyReminder] = useState<MonthlyZakatReminderConfig>(() =>
+    loadMonthlyZakatReminder()
+  );
+  const [notifPermission, setNotifPermission] = useState<NotificationPermission | 'unsupported'>(() =>
+    getNotificationPermissionStatus()
+  );
+  const [isDueReminderBannerOpen, setIsDueReminderBannerOpen] = useState<boolean>(false);
+
+  useEffect(() => {
+    saveMonthlyZakatReminder(monthlyReminder);
+  }, [monthlyReminder]);
+
+  useEffect(() => {
+    const syncPermission = () => setNotifPermission(getNotificationPermissionStatus());
+    window.addEventListener('focus', syncPermission);
+    return () => window.removeEventListener('focus', syncPermission);
+  }, []);
+
+  // Check on mount & every minute whether this month's Zakat assessment reminder is due
+  useEffect(() => {
+    const evaluateMonthlyReminder = () => {
+      const now = new Date();
+      if (isMonthlyZakatReminderDue(monthlyReminder, now)) {
+        const currentMonthKey = getMonthKey(now);
+        dispatchMonthlyZakatReminderNotification(monthlyReminder, false);
+        setMonthlyReminder((prev) => ({
+          ...prev,
+          lastNotifiedMonthKey: currentMonthKey,
+        }));
+        setIsDueReminderBannerOpen(true);
+      }
+    };
+
+    evaluateMonthlyReminder();
+    const interval = window.setInterval(evaluateMonthlyReminder, 60_000);
+    return () => window.clearInterval(interval);
+  }, [monthlyReminder]);
+
+  const handleToggleMonthlyReminder = async () => {
+    const nextEnabled = !monthlyReminder.enabled;
+    setMonthlyReminder((prev) => ({
+      ...prev,
+      enabled: nextEnabled,
+    }));
+
+    if (nextEnabled) {
+      const status = getNotificationPermissionStatus();
+      setNotifPermission(status);
+      if (status === 'default') {
+        const granted = await requestNotificationPermission();
+        const updatedStatus = getNotificationPermissionStatus();
+        setNotifPermission(updatedStatus);
+        if (granted) {
+          setReportNotification(
+            `Pengingat evaluasi zakat bulanan aktif (setiap tanggal ${monthlyReminder.dayOfMonth} pukul ${monthlyReminder.timeStr}).`
+          );
+        } else {
+          setReportNotification(
+            'Pengingat bulanan disimpan. Izinkan notifikasi browser agar pengingat muncul otomatis.'
+          );
+        }
+      } else if (status === 'denied') {
+        setReportNotification(
+          'Pengingat bulanan diaktifkan, namun izin notifikasi diblokir browser. Buka setelan situs untuk mengizinkan.'
+        );
+      } else if (status === 'granted') {
+        setReportNotification(
+          `Pengingat evaluasi zakat bulanan aktif setiap tanggal ${monthlyReminder.dayOfMonth} pukul ${monthlyReminder.timeStr}.`
+        );
+      } else {
+        setReportNotification(
+          `Pengingat evaluasi zakat bulanan diaktifkan (pengingat dalam aplikasi setiap tanggal ${monthlyReminder.dayOfMonth}).`
+        );
+      }
+      setTimeout(() => setReportNotification(null), 4500);
+    } else {
+      setReportNotification('Pengingat evaluasi zakat bulanan dinonaktifkan.');
+      setTimeout(() => setReportNotification(null), 3500);
+    }
+  };
+
+  const handleRequestZakatNotifPermission = async () => {
+    const granted = await requestNotificationPermission();
+    const updatedStatus = getNotificationPermissionStatus();
+    setNotifPermission(updatedStatus);
+    if (granted) {
+      setReportNotification('Izin notifikasi Web aktif! Siap mengirim pengingat zakat bulanan.');
+    } else if (updatedStatus === 'denied') {
+      setReportNotification('Notifikasi diblokir browser. Ubah izin notifikasi melalui ikon gembok di bilah alamat.');
+    }
+    setTimeout(() => setReportNotification(null), 4500);
+  };
+
+  const handleTestMonthlyZakatReminder = async () => {
+    let status = getNotificationPermissionStatus();
+    if (status === 'default') {
+      await requestNotificationPermission();
+      status = getNotificationPermissionStatus();
+      setNotifPermission(status);
+    }
+
+    const { sentNative, title } = dispatchMonthlyZakatReminderNotification(monthlyReminder, true);
+    if (sentNative) {
+      setReportNotification(`Notifikasi uji coba "${title}" berhasil dikirim ke perangkat Anda!`);
+    } else if (status === 'denied') {
+      setReportNotification('Notifikasi browser diblokir. Izinkan di pengaturan situs untuk menerima push alert.');
+    } else {
+      setReportNotification(`Simulasi pengingat bulanan ditampilkan: "${title}".`);
+    }
+    setTimeout(() => setReportNotification(null), 4500);
+  };
+
+  const handleMarkMonthlyAssessmentComplete = () => {
+    const currentMonthKey = getMonthKey();
+    setMonthlyReminder((prev) => ({
+      ...prev,
+      lastAssessedMonthKey: currentMonthKey,
+      lastNotifiedMonthKey: currentMonthKey,
+    }));
+    setIsDueReminderBannerOpen(false);
+    setReportNotification('Alhamdulillah! Evaluasi zakat bulan ini ditandai selesai.');
+    setTimeout(() => setReportNotification(null), 4000);
+  };
+
+  const nextReminderDate = useMemo(
+    () => getNextMonthlyZakatReminderDate(monthlyReminder),
+    [monthlyReminder]
+  );
+
+  const daysUntilNextReminder = Math.max(
+    0,
+    Math.ceil((nextReminderDate.getTime() - Date.now()) / (1000 * 60 * 60 * 24))
+  );
+
+  const isAssessedThisMonth = monthlyReminder.lastAssessedMonthKey === getMonthKey();
 
   // Computations
   let totalNetAssets = 0;
@@ -684,6 +837,29 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
         </div>
       )}
 
+      {isDueReminderBannerOpen && (
+        <div className="p-4 rounded-xl bg-amber-950/60 border border-amber-500/50 text-amber-100 text-xs flex flex-col sm:flex-row sm:items-center justify-between gap-3">
+          <div className="flex items-start sm:items-center gap-2.5">
+            <BellRing className="w-5 h-5 text-amber-300 shrink-0 mt-0.5 sm:mt-0" />
+            <div>
+              <strong className="text-sm text-white block">
+                Waktunya Evaluasi Zakat Bulanan Anda
+              </strong>
+              <span className="text-amber-200/90">
+                Jadwal rutin tanggal {monthlyReminder.dayOfMonth} telah tiba. Periksa penghasilan atau saldo harta bersih Anda bulan ini.
+              </span>
+            </div>
+          </div>
+          <button
+            type="button"
+            onClick={handleMarkMonthlyAssessmentComplete}
+            className="px-3.5 py-2 rounded-lg bg-amber-400 hover:bg-amber-300 text-slate-950 font-bold text-xs whitespace-nowrap shrink-0 transition-colors"
+          >
+            Tandai Sudah Evaluasi Bulan Ini
+          </button>
+        </div>
+      )}
+
       {/* Calculator Body Grid */}
       <div className="grid grid-cols-1 lg:grid-cols-12 gap-6">
         {/* Input Panel (7 cols) */}
@@ -1007,6 +1183,228 @@ export const ZakatCalculatorSection: React.FC<ZakatCalculatorSectionProps> = ({
               <ShieldCheck className="w-3.5 h-3.5 text-emerald-400" />
               <span>Terintegrasi dengan qris.masjid.islamicity.tv & qris.media.islamicity.tv</span>
             </div>
+          </div>
+        </div>
+      </div>
+
+      {/* Monthly Zakat Assessment Notification Reminder Card */}
+      <div className="p-6 rounded-2xl bg-slate-900 border border-slate-800 space-y-5">
+        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4 pb-4 border-b border-slate-800">
+          <div className="flex items-start gap-3">
+            <div
+              className={`w-10 h-10 rounded-xl border flex items-center justify-center shrink-0 ${
+                monthlyReminder.enabled
+                  ? 'bg-emerald-600/20 border-emerald-500/40 text-emerald-400'
+                  : 'bg-slate-950 border-slate-800 text-slate-500'
+              }`}
+            >
+              {monthlyReminder.enabled ? (
+                <BellRing className="w-5 h-5" />
+              ) : (
+                <BellOff className="w-5 h-5" />
+              )}
+            </div>
+            <div>
+              <h3 className="text-base sm:text-lg font-bold text-white flex flex-wrap items-center gap-2">
+                <span>Pengingat Evaluasi Zakat Bulanan (Web Notification)</span>
+              </h3>
+              <p className="text-xs text-slate-400 mt-0.5">
+                Atur jadwal pengingat otomatis setiap bulan agar kewajiban evaluasi zakat penghasilan maupun zakat maal tidak terlewat.
+              </p>
+            </div>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2.5 shrink-0">
+            <button
+              type="button"
+              role="switch"
+              aria-checked={monthlyReminder.enabled}
+              onClick={handleToggleMonthlyReminder}
+              className={`px-4 py-2 rounded-xl text-xs font-bold flex items-center gap-2 border transition-colors whitespace-nowrap ${
+                monthlyReminder.enabled
+                  ? 'bg-emerald-600 hover:bg-emerald-500 border-emerald-500 text-slate-950'
+                  : 'bg-slate-950 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              {monthlyReminder.enabled ? (
+                <Bell className="w-4 h-4" />
+              ) : (
+                <BellOff className="w-4 h-4 text-slate-400" />
+              )}
+              <span>{monthlyReminder.enabled ? 'Pengingat Bulanan: AKTIF' : 'Aktifkan Pengingat Bulanan'}</span>
+            </button>
+
+            <button
+              type="button"
+              onClick={handleTestMonthlyZakatReminder}
+              className="px-3.5 py-2 rounded-xl bg-slate-800 hover:bg-slate-700 border border-slate-700 text-slate-200 text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap"
+            >
+              <Send className="w-3.5 h-3.5 text-emerald-400" />
+              <span>Tes Pengingat</span>
+            </button>
+          </div>
+        </div>
+
+        {/* Configuration Controls */}
+        <div className="grid grid-cols-1 md:grid-cols-12 gap-4 items-end">
+          <div className="md:col-span-4 space-y-1.5">
+            <label
+              htmlFor="zakat-reminder-day"
+              className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+            >
+              Tanggal Pengingat Tiap Bulan (1–28)
+            </label>
+            <div className="flex items-center gap-2">
+              <select
+                id="zakat-reminder-day"
+                value={monthlyReminder.dayOfMonth}
+                onChange={(e) =>
+                  setMonthlyReminder((prev) => ({
+                    ...prev,
+                    dayOfMonth: Number(e.target.value),
+                  }))
+                }
+                className="flex-1 px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500 tabular-nums"
+              >
+                {Array.from({ length: 28 }, (_, i) => i + 1).map((day) => (
+                  <option key={day} value={day}>
+                    Setiap Tanggal {day}
+                  </option>
+                ))}
+              </select>
+              <div className="flex items-center gap-1">
+                {[1, 25, 28].map((presetDay) => (
+                  <button
+                    key={presetDay}
+                    type="button"
+                    onClick={() =>
+                      setMonthlyReminder((prev) => ({ ...prev, dayOfMonth: presetDay }))
+                    }
+                    className={`px-2 py-2 rounded-lg text-[11px] font-mono border transition-colors tabular-nums ${
+                      monthlyReminder.dayOfMonth === presetDay
+                        ? 'bg-emerald-600/20 border-emerald-500/50 text-emerald-300 font-bold'
+                        : 'bg-slate-950 border-slate-800 text-slate-400 hover:text-white'
+                    }`}
+                    title={`Setel tanggal ${presetDay}`}
+                  >
+                    {presetDay}
+                  </button>
+                ))}
+              </div>
+            </div>
+          </div>
+
+          <div className="md:col-span-3 space-y-1.5">
+            <label
+              htmlFor="zakat-reminder-time"
+              className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+            >
+              Waktu Pengingat
+            </label>
+            <input
+              id="zakat-reminder-time"
+              type="time"
+              value={monthlyReminder.timeStr}
+              onChange={(e) =>
+                setMonthlyReminder((prev) => ({
+                  ...prev,
+                  timeStr: e.target.value || '09:00',
+                }))
+              }
+              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500 font-mono tabular-nums"
+            />
+          </div>
+
+          <div className="md:col-span-5 space-y-1.5">
+            <label
+              htmlFor="zakat-reminder-focus"
+              className="block text-[11px] font-semibold uppercase tracking-wider text-slate-400"
+            >
+              Fokus Evaluasi Bulanan
+            </label>
+            <select
+              id="zakat-reminder-focus"
+              value={monthlyReminder.zakatFocus}
+              onChange={(e) =>
+                setMonthlyReminder((prev) => ({
+                  ...prev,
+                  zakatFocus: e.target.value as MonthlyZakatReminderConfig['zakatFocus'],
+                }))
+              }
+              className="w-full px-3 py-2 rounded-lg bg-slate-950 border border-slate-700 text-xs text-white focus:outline-none focus:border-emerald-500"
+            >
+              <option value="penghasilan">Zakat Penghasilan / Profesi Bulanan</option>
+              <option value="maal">Evaluasi Haul &amp; Nisab Zakat Maal</option>
+              <option value="semua">Seluruh Portofolio Zakat (Penghasilan, Maal, Emas)</option>
+            </select>
+          </div>
+        </div>
+
+        {/* Status & Next Scheduled Date Strip */}
+        <div className="p-3.5 rounded-xl bg-slate-950 border border-slate-800 flex flex-col lg:flex-row lg:items-center justify-between gap-3 text-xs">
+          <div className="flex flex-wrap items-center gap-3 text-slate-300">
+            <span className="flex items-center gap-1.5">
+              <Calendar className="w-4 h-4 text-amber-400 shrink-0" />
+              <span>Jadwal Berikutnya:</span>
+              <strong className="text-white tabular-nums">
+                {nextReminderDate.toLocaleDateString('id-ID', {
+                  day: 'numeric',
+                  month: 'long',
+                  year: 'numeric',
+                })}{' '}
+                · {monthlyReminder.timeStr}
+              </strong>
+              <span className="text-emerald-400 font-mono tabular-nums">
+                ({daysUntilNextReminder === 0 ? 'Hari Ini' : `${daysUntilNextReminder} hari lagi`})
+              </span>
+            </span>
+
+            <span className="text-slate-700 hidden sm:inline" aria-hidden="true">·</span>
+
+            <span>
+              Izin Browser:{' '}
+              <strong
+                className={
+                  notifPermission === 'granted'
+                    ? 'text-emerald-400'
+                    : notifPermission === 'denied'
+                    ? 'text-red-400'
+                    : 'text-amber-300'
+                }
+              >
+                {notifPermission === 'granted'
+                  ? 'Aktif'
+                  : notifPermission === 'denied'
+                  ? 'Diblokir'
+                  : notifPermission === 'unsupported'
+                  ? 'Tidak Didukung'
+                  : 'Belum Diaktifkan'}
+              </strong>
+            </span>
+          </div>
+
+          <div className="flex flex-wrap items-center gap-2 shrink-0">
+            {notifPermission !== 'granted' && notifPermission !== 'unsupported' && (
+              <button
+                type="button"
+                onClick={handleRequestZakatNotifPermission}
+                className="px-3 py-1.5 rounded-lg bg-emerald-600/20 hover:bg-emerald-600/30 border border-emerald-500/40 text-emerald-300 text-[11px] font-semibold transition-colors whitespace-nowrap"
+              >
+                Izinkan Notifikasi Browser
+              </button>
+            )}
+            <button
+              type="button"
+              onClick={handleMarkMonthlyAssessmentComplete}
+              disabled={isAssessedThisMonth}
+              className={`px-3 py-1.5 rounded-lg text-[11px] font-semibold border transition-colors whitespace-nowrap ${
+                isAssessedThisMonth
+                  ? 'bg-emerald-950/60 border-emerald-700/40 text-emerald-400 cursor-default'
+                  : 'bg-slate-900 hover:bg-slate-800 border-slate-700 text-slate-200'
+              }`}
+            >
+              {isAssessedThisMonth ? 'Evaluasi Bulan Ini Selesai' : 'Tandai Evaluasi Bulan Ini'}
+            </button>
           </div>
         </div>
       </div>
