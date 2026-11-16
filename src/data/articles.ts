@@ -17,6 +17,32 @@ export interface ArticleItem {
 
 export const ISLAMICITY_ARTICLES: ArticleItem[] = [
   {
+    id: 'resolusi-jihad-harta-jiwaraga-ulama',
+    title: 'Resolusi Jihad di Jalan Allah dengan Harta & Jiwa Raga serta Peran Ulama Islamicity Saat Ini',
+    kicker: 'Resolusi Jihad & Kepemimpinan Ulama',
+    author: 'Majelis Ulama & Dewan Syariah Islamicity',
+    date: 'November 2026',
+    readTime: '6 menit baca',
+    excerpt: 'Aktualisasi jihad fi sabilillah dengan harta (bi amwâlikum) dan jiwa raga (bi anfusikum) beserta empat peran strategis ulama Islamicity berdasarkan QS. An-Nisa [4]: 141, QS. Al-Hajj [22]: 78, QS. Fatir [35]: 28, QS. Ali \'Imran [3]: 104, dan QS. Thaha [20]: 124.',
+    quranVerse: {
+      arabic: 'وَجَاهِدُوا فِي اللَّهِ حَقَّ جِهَادِهِ ۚ هُوَ اجْتَبَاكُمْ وَمَا جَعَلَ عَلَيْكُمْ فِي الدِّينِ مِنْ حَرَجٍ ۚ ... فَأَقِيمُوا الصَّلَاةَ وَآتُوا الزَّكَاةَ وَاعْتَصِمُوا بِاللَّهِ هُوَ مَوْلَاكُمْ ۖ فَنِعْمَ الْمَوْلَىٰ وَنِعْمَ النَّصِيرُ',
+      surah: 'QS. Al-Hajj [22]: 78',
+      translation: 'Dan berjihadlah kamu pada jalan Allah dengan jihad yang sebenar-benarnya... Maka dirikanlah sholat, tunaikanlah zakat, dan berpeganglah kamu pada tali Allah. Dia adalah Pelindungmu, maka Dialah sebaik-baik Pelindung dan sebaik-baik Penolong.'
+    },
+    content: [
+      'Resolusi Jihad di jalan Allah bukanlah slogan historis semata, melainkan mandat abadi Al-Qur\'an yang memadukan pengorbanan harta (bi amwâlikum) dan kesungguhan jiwa raga (bi anfusikum). Dalam QS. Al-Hajj [22]: 78, Allah memerintahkan orang beriman untuk berjihad dengan jihad yang sebenar-benarnya (haqqa jihâdihi), menegakkan sholat, menunaikan zakat, serta berpegang teguh kepada tali Allah.',
+      'Di tengah tantangan peradaban modern, QS. An-Nisa [4]: 141 menegaskan prinsip kedaulatan iman: Allah sekali-kali tidak akan memberi jalan kepada orang-orang kafir untuk menguasai kaum mukminin. Artinya, jihad harta melalui zakat produktif, wakaf media dakwah, dan pembebasan umat dari sistem ribawi merupakan keharusan strategis agar umat berdaulat secara ekonomi dan pemikiran.',
+      'Gerakan tersebut membutuhkan kepemimpinan ulama yang berintegritas sebagaimana ditegaskan dalam QS. Fatir [35]: 28, bahwa sesungguhnya yang paling takut kepada Allah (khasyah) di antara hamba-hamba-Nya hanyalah para ulama. Bersama konsolidasi dakwah jama\'i yang menyeru kepada kebajikan dan menegakkan amar ma\'ruf nahi munkar (QS. Ali \'Imran [3]: 104), ulama Islamicity memikul amanah menyatukan pesantren, masjid, relawan, dan jaringan media dakwah.',
+      'Akhirnya, QS. Thaha [20]: 124 memberikan peringatan tegas bahwa siapa saja yang berpaling dari peringatan Allah (dzikrullâh), baginya penghidupan yang sempit (ma\'îsyatan dhankâ). Karena itu, peran utama Ulama Islamicity saat ini adalah membimbing umat kembali kepada Al-Qur\'an, syariat, dzikir, dan ukhuwah agar krisis moral dan ekonomi berganti menjadi keberkahan dunia hingga keselamatan akhirat.'
+    ],
+    keyTakeaways: [
+      'Jihad Harta & Jiwa Raga: Menyatukan zakat/wakaf produktif dengan pengabdian ilmu, tenaga, dan akhlaq.',
+      'Kedaulatan Mukminin (QS. 4:141): Membangun kemandirian ekonomi syariah dan media dakwah umat.',
+      'Ulama Ber-Khasyah (QS. 35:28 & 3:104): Memimpin barisan amar ma\'ruf nahi munkar secara kolektif.',
+      'Obat Ma\'îsyatan Dhankâ (QS. 20:124): Mengembalikan kehidupan umat pada dzikrullah dan syariat Allah.'
+    ]
+  },
+  {
     id: 'hakikat-mafahim-islam',
     title: 'Hakikat Mafâhîm Islam sebagai Pedoman Perilaku (Ḍawābiṭ)',
     kicker: 'Fikrah & Pedoman Perilaku Muslim',

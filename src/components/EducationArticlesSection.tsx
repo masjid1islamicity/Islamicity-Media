@@ -1,6 +1,9 @@
 import React, { useState } from 'react';
 import { ISLAMICITY_ARTICLES, ArticleItem } from '../data/articles';
 import { MafahimIslamModule } from './MafahimIslamModule';
+import { ResolusiJihadUlamaModule } from './ResolusiJihadUlamaModule';
+import { KhatamQuranTrackerModule } from './KhatamQuranTrackerModule';
+import { NavTab } from '../types/islamicity';
 import { 
   BookOpen, 
   Scale, 
@@ -9,12 +12,22 @@ import {
   Coins, 
   Sparkles, 
   Lightbulb,
-  TrendingUp,
   Compass,
+  Shield,
+  TrendingUp,
+  BookMarked,
 } from 'lucide-react';
 
-export const EducationArticlesSection: React.FC = () => {
-  const [activeView, setActiveView] = useState<'mafahim' | 'pilar-kajian'>('mafahim');
+interface EducationArticlesSectionProps {
+  onSelectTab?: (tab: NavTab) => void;
+  onOpenQrisWithAmount?: (amount: number, category: string) => void;
+}
+
+export const EducationArticlesSection: React.FC<EducationArticlesSectionProps> = ({
+  onSelectTab,
+  onOpenQrisWithAmount,
+}) => {
+  const [activeView, setActiveView] = useState<'khatam-quran' | 'resolusi-jihad' | 'mafahim' | 'pilar-kajian'>('khatam-quran');
   const [articles] = useState<ArticleItem[]>(ISLAMICITY_ARTICLES);
   const [selectedArticle, setSelectedArticle] = useState<ArticleItem>(ISLAMICITY_ARTICLES[0]);
 
@@ -48,18 +61,42 @@ export const EducationArticlesSection: React.FC = () => {
   return (
     <div className="space-y-8 max-w-6xl mx-auto">
       {/* Header + Sub-view Switcher */}
-      <div className="flex flex-col md:flex-row md:items-end justify-between gap-4">
+      <div className="flex flex-col lg:flex-row lg:items-end justify-between gap-4">
         <div>
           <h2 className="text-2xl font-bold text-white flex items-center gap-2">
             <BookOpen className="w-6 h-6 text-emerald-400" />
             <span>Edukasi &amp; Fikrah Islamicity: Al-Qur'an, Sunnah &amp; Mafâhîm</span>
           </h2>
           <p className="text-sm text-slate-400 mt-1">
-            Wadah induk landasan spiritual, pedoman perilaku (<span className="italic">ḍawābiṭ</span>), pengelolaan aset manajemen, dan tatanan peradaban Allah SWT.
+            Wadah induk landasan spiritual, resolusi jihad harta &amp; jiwa raga, pedoman perilaku (<span className="italic">ḍawābiṭ</span>), dan peran ulama peradaban.
           </p>
         </div>
 
-        <div className="flex items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl shrink-0">
+        <div className="flex flex-wrap items-center gap-1 p-1 bg-slate-900 border border-slate-800 rounded-xl shrink-0">
+          <button
+            type="button"
+            onClick={() => setActiveView('khatam-quran')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              activeView === 'khatam-quran'
+                ? 'bg-emerald-600 text-slate-950'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <BookMarked className="w-3.5 h-3.5" />
+            <span>Khatam Al-Qur&apos;an</span>
+          </button>
+          <button
+            type="button"
+            onClick={() => setActiveView('resolusi-jihad')}
+            className={`px-3.5 py-2 rounded-lg text-xs font-semibold flex items-center gap-1.5 transition-colors whitespace-nowrap ${
+              activeView === 'resolusi-jihad'
+                ? 'bg-emerald-600 text-slate-950'
+                : 'text-slate-300 hover:text-white'
+            }`}
+          >
+            <Shield className="w-3.5 h-3.5" />
+            <span>Resolusi Jihad &amp; Ulama</span>
+          </button>
           <button
             type="button"
             onClick={() => setActiveView('mafahim')}
@@ -87,7 +124,14 @@ export const EducationArticlesSection: React.FC = () => {
         </div>
       </div>
 
-      {activeView === 'mafahim' ? (
+      {activeView === 'khatam-quran' ? (
+        <KhatamQuranTrackerModule />
+      ) : activeView === 'resolusi-jihad' ? (
+        <ResolusiJihadUlamaModule
+          onSelectTab={onSelectTab}
+          onOpenQrisWithAmount={onOpenQrisWithAmount}
+        />
+      ) : activeView === 'mafahim' ? (
         <MafahimIslamModule />
       ) : (
         <>

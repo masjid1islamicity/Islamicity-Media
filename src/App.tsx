@@ -168,7 +168,10 @@ export default function App() {
         )}
 
         {activeTab === 'edukasi' && (
-          <EducationArticlesSection />
+          <EducationArticlesSection
+            onSelectTab={setActiveTab}
+            onOpenQrisWithAmount={(amt, cat) => handleOpenQrisModal(amt, cat)}
+          />
         )}
 
         {activeTab === 'komunitas' && (
